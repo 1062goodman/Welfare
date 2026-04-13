@@ -11,7 +11,8 @@ params = {
     'serviceKey': api_key,
     'callTp': 'L',
     'pageNo': '1',
-    'numOfRows': '10'
+    'numOfRows': '10', #기본값 10 최대 500
+    'srchKeyCode' : '003' #001 제목, 002 내용, 003 제목+내용
 }
 
 try:
