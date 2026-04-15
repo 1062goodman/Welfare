@@ -11,7 +11,7 @@ params = {
     'serviceKey': api_key,
     'callTp': 'L',
     'pageNo': '1',
-    'numOfRows': '10', #기본값 10 최대 500
+    'numOfRows': '500', #기본값 10 최대 500
     'srchKeyCode' : '003' #001 제목, 002 내용, 003 제목+내용
 }
 
@@ -23,3 +23,10 @@ try:
 
 except Exception as e:
     print("요청 중 에러 발생:", e)
+
+
+try:
+    with open('example.xml', 'w', encoding='utf-8') as f :
+        f.write(response.text)
+except Exception as E:
+    print(f"xml파일 생성중 에러: {E}")
