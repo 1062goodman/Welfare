@@ -2,6 +2,13 @@ pip install -r requirements.txt
 명령어로 가상환경 설정
 
 .env 파일 만들어서 key 같은변수 설정해줘야 하는데, key는 그냥 올리면 안되서 따로 공유할 방법 찾아보겠습니다. 
-dataExtraction.py 실행시키면 example.xml 출력.
+dataExtraction.py 실행시키면 example.xml 출력. (깃허브에 파일은 보기쉽게 정렬했는데 원래는 한 줄로 나옴)
 parsing.py 실행시키면 json파일 출력 
 
+==================================================
+수정해야 할것들
+- 데이터 정리를 위해 일단 대충 만듦. 파이프라인에 맞게 기능 나눠야함
+- dataExtraction 코드가 공공데이터 포털api 처리에 맞춰짐. 다른 api도 처리할수 있게 유연하게 바꿔야함.
+
+생각할 것들 
+- 아마 데이터는 db가 아니라 json파일로 관리할듯. 
