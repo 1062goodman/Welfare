@@ -34,18 +34,8 @@ loader = JSONLoader(file_path= file_path,
                     content_key='servDgst',
                     text_content=False)
 
-
-
-
-
-
-
-# chroma db 만들기
-
 docs = loader.load()
-print(docs[0].__dict__)
-print("\n\n")
-print("------------------------------")
+
 
 #모델 불러오기
 solar_llm = ChatUpstage(
@@ -57,6 +47,10 @@ solar_emb = UpstageEmbeddings(
     model = emb_model
 )
 
+
+
+
+
 def Vector():
     vector_db = Chroma.from_documents(
         documents=docs,  # 청크로 쪼갠 리스트 형태
@@ -64,7 +58,21 @@ def Vector():
         persist_directory= "./chroma_db"
     )
 
-#Vector()
+
+
+
+def Graph():
+    # 솔라 LLM으로 지식 추출기 생성
+    index_creator = GraphIndexCreator(llm=solar_llm) 
+
+    # API로 받은 데이터 입력
+    text = "서울병원은 순천시에 위치하며, 소아과 전문의가 3명 있습니다."
+    graph = index_creator.from_text(text)
+
+    # 결과 확인
+    print(graph.get_triples())
+
+
 
 
 
@@ -77,7 +85,7 @@ loaded_db = Chroma(
 )
 
 
-query = "아이를 키우는데 돈이 많이 들어. 어떻게 해야할까?"
+query = "아이가 놀곳이 없어. 어떻게 해야할까?"
 
 testdocs = loaded_db.similarity_search(query, k=3) # 유사도가 높은 k개 
 
@@ -85,5 +93,4 @@ print(f"질문: {query}\n")
 for i, doc in enumerate(testdocs):
     print(f"--- 검색 결과 {i+1} ---")
     print(f"내용: {doc.page_content}")
-    print(f"번호: {doc.metadata['seq_num']}")
 
