@@ -9,10 +9,16 @@ file_path = 'DataList1.json'
 with open(file_path, 'r', encoding='utf-8') as f:
     raw_data = json.load(f)
 
-documents = []
+
+
+structured_data = [] 
+texts_to_embed = []
 
 for item in raw_data:
     
+    serv_nm = item.get("servNm", "")
+    serv_id = item.get("servId", "")
+
     #여러개가 있어서 리스트 형태로 분리
     life_array = [x.strip() for x in item.get("lifeArray", "").split(",") if x.strip()]
     intrs_thema_array = [x.strip() for x in item.get("intrsThemaArray", "").split(",") if x.strip()]
@@ -21,8 +27,8 @@ for item in raw_data:
     
     #노드와 관계를 만들 때 사용
     metadata = {
-        "servId": item.get("servId", ""),
-        "servNm": item.get("servNm", ""),
+        "servId": serv_id,
+        "servNm": serv_nm,
         "servDgst": item.get("servDgst", ""),
         "jurMnofNm": item.get("jurMnofNm", ""),   # 부처 노드용
         "srvPvsnNm": item.get("srvPvsnNm", ""),   # 제공유형 노드용
@@ -30,6 +36,32 @@ for item in raw_data:
         "intrsThemaArray": intrs_thema_array,     # 관심주제 노드용 (리스트 형태)
         "trgterIndvdlArray": trgter_indvdl_array  # 대상/가구유형 노드용 (리스트 형태)
     }
+
+    chunks = []
+    
+    # 지원대상
+    if item.get("target_info"):
+        # 벡터 검색 성능을 높이기 위해 정책명을 앞에 붙여줍니다.
+        content = f"[정책명: {serv_nm}] 지원대상: {item.get('target_info')}"
+        chunks.append({"type": "지원대상", "content": content})
+        texts_to_embed.append(content)
+        
+    # 서비스내용
+    if item.get("service_content"):
+        content = f"[정책명: {serv_nm}] 서비스내용: {item.get('service_content')}"
+        chunks.append({"type": "서비스내용", "content": content})
+        texts_to_embed.append(content)
+        
+    # 신청방법
+    if item.get("apply_method"):
+        content = f"[정책명: {serv_nm}] 신청방법: {item.get('apply_method')}"
+        chunks.append({"type": "신청방법", "content": content})
+        texts_to_embed.append(content)
+        
+    structured_data.append({
+        "metadata": metadata,
+        "chunks": chunks
+    })
 
     #이건 벡터화하여 저장 (벡터검색으로 자신의 조건에 맞는 정책 및 서비스 찾기)
     page_content = f"""
@@ -40,13 +72,14 @@ for item in raw_data:
     [신청방법 상세]: {item.get('apply_method', '')}
     """
 
-    
-    doc = Document(page_content=page_content.strip(), metadata=metadata)
-    documents.append(doc)
+print("전처리 완료")
+
 
 
 #-------------------------------------------------------- 
 #db 적재
+
+
 
 import os
 from dotenv import find_dotenv, load_dotenv
@@ -54,7 +87,7 @@ from langchain_neo4j import Neo4jGraph
 from langchain_upstage.embeddings import UpstageEmbeddings 
 
 load_dotenv(find_dotenv())
-api_key = os.getenv('solarkey')
+api_key = os.getenv('UPSTAGE_API_KEY')
 os.environ["NEO4J_URI"] = os.getenv('NEO4J_URI')
 os.environ["NEO4J_USERNAME"] = os.getenv('NEO4J_USERNAME')
 os.environ["NEO4J_PASSWORD"] = os.getenv('NEO4J_PASSWORD')
@@ -72,75 +105,78 @@ solar_emb = UpstageEmbeddings(
 
 graph = Neo4jGraph()
 
+print("연결 완료")
 
-
-texts_to_embed = [doc.page_content for doc in documents]
 embeddings = solar_emb.embed_documents(texts_to_embed)
+
+emb_index = 0
+for data in structured_data:
+    for chunk in data["chunks"]:
+        chunk["embedding"] = embeddings[emb_index]
+        emb_index += 1
+
+print("임베딩 완료")
 
 # Neo4j Cypher 쿼리문 
 
 ingestion_query = """
-// 1) 정책(Policy) 중심 노드 생성 및 벡터/속성 저장
+// 1) 정책(Policy) 본체 노드 생성 (내용과 벡터가 없음!)
 MERGE (p:Policy {servId: $metadata.servId})
 SET p.servNm = $metadata.servNm,
-    p.servDgst = $metadata.servDgst,
-    p.page_content = $page_content,
-    p.embedding = $embedding
+    p.servDgst = $metadata.servDgst
 
-// 2) 부처(Department) 노드 연결 (값이 있을 때만)
+// 2) 부처, 제공유형 등 메타데이터 연결 (기존 동일)
 FOREACH (dept IN CASE WHEN $metadata.jurMnofNm <> "" THEN [$metadata.jurMnofNm] ELSE [] END |
     MERGE (d:Department {name: dept})
     MERGE (p)-[:MANAGED_BY]->(d)
 )
-
-// 3) 제공유형(SupportType) 노드 연결
 FOREACH (stype IN CASE WHEN $metadata.srvPvsnNm <> "" THEN [$metadata.srvPvsnNm] ELSE [] END |
     MERGE (s:SupportType {name: stype})
     MERGE (p)-[:PROVIDES]->(s)
 )
-
-// 4) 생애주기(LifeCycle) 노드 연결 (리스트를 순회하며 여러 개 생성)
 FOREACH (life IN $metadata.lifeArray |
     MERGE (l:LifeCycle {name: life})
     MERGE (p)-[:TARGETS_AGE]->(l)
 )
-
-// 5) 대상/가구유형(TargetGroup) 노드 연결
 FOREACH (target IN $metadata.trgterIndvdlArray |
     MERGE (t:TargetGroup {name: target})
     MERGE (p)-[:TARGETS_GROUP]->(t)
 )
-
-// 6) 관심주제(Theme) 노드 연결
 FOREACH (theme IN $metadata.intrsThemaArray |
     MERGE (th:Theme {name: theme})
     MERGE (p)-[:RELATES_TO]->(th)
 )
+
+// 3) 핵심! 정보 조각(Chunk) 노드 생성 및 HAS_INFO 관계로 연결
+FOREACH (chk IN $chunks |
+    // ID를 'WLF0000_지원대상' 형식으로 고유하게 생성
+    MERGE (c:Chunk {id: $metadata.servId + '_' + chk.type})
+    SET c.type = chk.type,
+        c.content = chk.content,
+        c.embedding = chk.embedding
+    MERGE (p)-[:HAS_INFO]->(c)
+)
 """
 
-
-for i, doc in enumerate(documents):
-
-    params = {
-        "metadata": doc.metadata,
-        "page_content": doc.page_content,
-        "embedding": embeddings[i]
-    }
-    
-    graph.query(ingestion_query, params=params)
-    
+print("db적재")
+for i, doc in enumerate(structured_data):
+    graph.query(ingestion_query, params=data)
     if (i + 1) % 10 == 0:
-        print(f"[{i + 1} / {len(documents)}] 개 완료...")
+        print(f"[{i + 1} / {len(structured_data)}] 정책 완료...")
 
 
 
 create_index_query = """
-CREATE VECTOR INDEX policy_embedding_index IF NOT EXISTS
-FOR (p:Policy)
-ON (p.embedding)
+CREATE VECTOR INDEX chunk_embedding_index IF NOT EXISTS
+FOR (c:Chunk)
+ON (c.embedding)
 OPTIONS {indexConfig: {
   `vector.dimensions`: 4096,
   `vector.similarity_function`: 'cosine'
 }}
 """
+
 graph.query(create_index_query)
+
+
+

@@ -15,7 +15,8 @@ pip install -r requirements.txt
 
 
 (2). chat
-    -1 아직 테스트중입니다.
+    -1 main.py를 실행시키면 채팅가능
+    -2 성능확인 필요
 
 
 
