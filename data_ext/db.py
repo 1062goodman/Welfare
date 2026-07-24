@@ -159,7 +159,7 @@ FOREACH (chk IN $chunks |
 """
 
 print("db적재")
-for i, doc in enumerate(structured_data):
+for i, data in enumerate(structured_data):
     graph.query(ingestion_query, params=data)
     if (i + 1) % 10 == 0:
         print(f"[{i + 1} / {len(structured_data)}] 정책 완료...")

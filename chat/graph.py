@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 
 from state import AgentState
 from nodes import (classify_intent_node,
@@ -6,7 +7,8 @@ from nodes import (classify_intent_node,
     ask_for_details_node,
     execute_search_node,
     execute_detail_search_node,
-    generate_answer_node)
+    generate_answer_node,
+    block_attack_node)
 
 # ---------------------------------------------------------
 # 라우팅
@@ -23,6 +25,8 @@ def route_by_intent(state: AgentState) -> str:
         return "execute_search"
     elif intent == "상세요구":
         return "execute_detail_search"
+    elif intent == "프롬프트공격":
+            return "block_attack"
     
     # 기본값 일상 대화
     return "general_chat"
@@ -39,6 +43,8 @@ workflow.add_node("ask_for_details", ask_for_details_node)
 workflow.add_node("execute_search", execute_search_node)
 workflow.add_node("execute_detail_search", execute_detail_search_node)
 workflow.add_node("generate_answer", generate_answer_node)
+workflow.add_node("block_attack", block_attack_node)
+
 
 # 시작점 설정 (의도 분석)
 workflow.add_edge(START, "classify_intent")
@@ -57,6 +63,8 @@ workflow.add_edge("execute_detail_search", "generate_answer")
 workflow.add_edge("general_chat", END)
 workflow.add_edge("ask_for_details", END)
 workflow.add_edge("generate_answer", END)
+workflow.add_edge("block_attack", END)
 
-# 6. 최종 앱으로 컴파일
+# 최종 앱으로 컴파일
+memory = MemorySaver()
 app = workflow.compile()

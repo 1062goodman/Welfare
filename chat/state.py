@@ -8,7 +8,7 @@ from langchain_core.messages import BaseMessage
 # ---------------------------------------------------------출력상태 정의 
 
 class IntentClassification(BaseModel):
-    intent: Literal["일상대화", "조건부족", "검색가능", "상세요구"] = Field(
+    intent: Literal["일상대화", "조건부족", "검색가능", "상세요구", "프롬프트공격"] = Field(
         description="사용자의 질문 의도를 분류합니다."
     )
     conditions: Dict[str, Any] = Field(
