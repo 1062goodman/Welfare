@@ -15,7 +15,7 @@ server = FastAPI(
 )
 
 # !!!!!!여기 추후 수정
-app.add_middleware(
+server.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # 모든 출처(바탕화면 파일 포함)에서의 접근을 허락함
     allow_credentials=True,
