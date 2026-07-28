@@ -2,14 +2,27 @@ import uuid
 from fastapi import FastAPI
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
+from fastapi.middleware.cors import CORSMiddleware 
 
 from graph import app 
+
+
 
 
 server = FastAPI(
     title="대한민국 복지 정책 챗봇 API",
     description="RAG 기반 복지 정책 안내 챗봇 서버입니다."
 )
+
+# !!!!!!여기 추후 수정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 모든 출처(바탕화면 파일 포함)에서의 접근을 허락함
+    allow_credentials=True,
+    allow_methods=["*"],  # GET, POST 등 모든 통신 방식 허락
+    allow_headers=["*"],  # 모든 데이터 헤더 허락
+)
+
 
 # 손님이 보낼 주문서(Request) 양식 정의 (Pydantic 사용)
 class ChatRequest(BaseModel):

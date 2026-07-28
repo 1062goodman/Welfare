@@ -21,7 +21,10 @@ def run_chatbot():
         if user_input.lower() in ['q']:
             print("종료합니다.")
             break
-            
+
+        elif len(user_input) <= 800:
+            print("글자수가 너무 많습니다.")
+            continue
         # 리스트에 넣기
         current_state["messages"].append(HumanMessage(content=user_input))
         
