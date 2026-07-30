@@ -13,13 +13,18 @@ from prompts import (
     INTENT_SYSTEM_PROMPT, 
     ANSWER_SYSTEM_PROMPT, 
     GENERAL_CHAT_PROMPT, 
-    ASK_DETAILS_PROMPT
+    ASK_DETAILS_PROMPT,
+    SUMMERIZE_SYSTEM_PROMPT
 )
 
 # ---------------------------------------------------------
 # LLM 
 load_dotenv(find_dotenv())
 api_key=os.getenv('UPSTAGE_API_KEY')
+
+#선요약
+summarize_llm = ChatUpstage(model="solar-mini")
+
 #의도분류
 llm = ChatUpstage(model="solar-pro")
 structured_llm = llm.with_structured_output(IntentClassification)
@@ -67,7 +72,29 @@ def classify_intent_node(state: AgentState):
         "target_policy": result.target_policy
     }
 
+# --------------------------------------------
+# 선요약
 
+summarize_prompt = ChatPromptTemplate.from_messages([
+    ("system", SUMMERIZE_SYSTEM_PROMPT),
+    ("placeholder", "{messages}") # 이전 대화 기록
+])
+
+summarize_chain = summarize_prompt | summarize_llm
+
+def pre_summarize_node(state: AgentState):
+
+    messages = state["messages"]
+    latest_user_message = messages[-1].content
+
+    if len(latest_user_message) > 300:
+        print("300자 초과하여 요약 실행")
+        response = summarize_chain.invoke({"messages": [messages[-1]]})
+        latest_user_message = response.content
+        print(f"요약된 문장:\n{latest_user_message}")
+
+    #"current_query" 필드에 가장 최근의 메시지를 넣음. (요약된것이든 원문이든)
+    return {"current_query": latest_user_message}
 
 
 
@@ -78,7 +105,7 @@ def execute_search_node(state: AgentState):
     print("db 검색")
     
     # 마지막 쿼리 추출
-    latest_message = state["messages"][-1].content
+    latest_message = state["current_query"]
     conditions = state.get("conditions", {})
     
     # 검색어 보강 

@@ -26,6 +26,7 @@ class IntentClassification(BaseModel):
 
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add] # Annotated와 operator.add를 사용하면, 이전 대화 기록에 새 메시지가 계속 누적(append)됩니다.
+    current_query: str
     intent: str # LLM이 판단한 의도 (일상대화 / 조건부족 / 검색가능)
     conditions: dict # LLM이 뽑아낸 검색 조건 딕셔너리
     target_policy: str

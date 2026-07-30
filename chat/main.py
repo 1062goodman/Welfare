@@ -22,7 +22,7 @@ def run_chatbot():
             print("종료합니다.")
             break
 
-        elif len(user_input) <= 800:
+        elif len(user_input) >= 1000:
             print("글자수가 너무 많습니다.")
             continue
         # 리스트에 넣기
@@ -34,7 +34,7 @@ def run_chatbot():
        
         ai_response = result_state["messages"][-1].content
         print(f"\n답변: {ai_response}\n")
-        \
+        
         
        
         current_state["messages"] = result_state["messages"]

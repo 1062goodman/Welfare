@@ -2,7 +2,9 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from state import AgentState
-from nodes import (classify_intent_node,
+from nodes import (
+    pre_summarize_node, 
+    classify_intent_node,
     general_chat_node,
     ask_for_details_node,
     execute_search_node,
@@ -37,6 +39,7 @@ def route_by_intent(state: AgentState) -> str:
 workflow = StateGraph(AgentState)
 
 # 노드 등록
+workflow.add_node("pre_summarize", pre_summarize_node)
 workflow.add_node("classify_intent", classify_intent_node)
 workflow.add_node("general_chat", general_chat_node)
 workflow.add_node("ask_for_details", ask_for_details_node)
@@ -47,13 +50,16 @@ workflow.add_node("block_attack", block_attack_node)
 
 
 # 시작점 설정 (의도 분석)
-workflow.add_edge(START, "classify_intent")
+workflow.add_edge(START, "pre_summarize")
 
 # 조건부 엣지
 workflow.add_conditional_edges(
     "classify_intent",
     route_by_intent
 )
+
+# 일반 엣지 (쿼리 요약->의도분석)
+workflow.add_edge("pre_summarize", "classify_intent")
 
 # 일반 엣지 (검색 ->답변 생성)
 workflow.add_edge("execute_search", "generate_answer")
