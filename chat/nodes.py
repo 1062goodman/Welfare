@@ -60,15 +60,32 @@ def classify_intent_node(state: AgentState):
     messages = state["messages"]
     
     result = intent_chain.invoke({"messages": messages})
-    
-    print(f"분석 결과: {result.intent} (이유: {result.reasoning})")
-    print(f"추출된 조건: {result.conditions}")
+
+    policy_names = getattr(result, 'policy_names', [])
+    life_cycle = getattr(result, 'life_cycle', [])
+    target_group = getattr(result, 'target_group', [])
+    theme = getattr(result, 'theme', [])
+
+    filled_slots_count = sum(1 for slot in [life_cycle, target_group, theme] if len(slot) > 0)
+
+    if len(policy_names) > 0 or filled_slots_count >= 2:
+        final_intent = "검색가능"
+    else:
+        final_intent = "조건부족"
+
+        
+    print(f"분석 결과: {final_intent} (이유: {result.reasoning})")
+    print(f"추출된 정책명: {result.policy_names}")
+    print(f"추출된 조건: 생애({result.life_cycle}), 가구({result.target_group}), 주제({result.theme})")
     print("\n\n")
     
     
     return {
-        "intent": result.intent,
-        "conditions": result.conditions,
+        "intent": final_intent,
+        "policy_names": result.policy_names,
+        "life_cycle": result.life_cycle,
+        "target_group": result.target_group,
+        "theme": result.theme,
         "target_policy": result.target_policy
     }
 
@@ -104,73 +121,103 @@ def pre_summarize_node(state: AgentState):
 def execute_search_node(state: AgentState):
     print("db 검색")
     
-    # 마지막 쿼리 추출
+    # 마지막 쿼리, 조건 추출
     latest_message = state["current_query"]
-    conditions = state.get("conditions", {})
-    
-    # 검색어 보강 
-    search_query = f"질문: {latest_message}\n조건: {conditions}"
-    
-    # 4096차원 벡터 변환
-    query_embedding = query_emb_model.embed_query(search_query)
-    
+    policy_names = state.get("policy_names", [])
+    life_cycle = state.get("life_cycle", [])
+    target_group = state.get("target_group", [])
+    theme = state.get("theme", [])
 
-    cypher_query = """
-    CALL db.index.vector.queryNodes('chunk_embedding_index', 10, $query_embedding)
-    YIELD node AS c, score
-    MATCH (p:Policy)-[:HAS_INFO]->(c)
-    WITH p, max(score) AS max_score
-    WHERE max_score >= $threshold
-    ORDER BY max_score DESC 
-    OPTIONAL MATCH (p)-[:MANAGED_BY]->(d:Department)
-    OPTIONAL MATCH (p)-[:PROVIDES]->(s:SupportType)
-    RETURN p.servId AS id, 
-           p.servNm AS title, 
-           p.servDgst AS digest, 
-           d.name AS department,
-           s.name AS support_type,
-           max_score AS score 
-    """
+    #조건으로 필터링
+    graph_filters = ""
+    if life_cycle:
+        graph_filters += "MATCH (p)-[:TARGETS_AGE]->(l:LifeCycle) WHERE l.name IN $life_cycle\n"
+    if target_group:
+        graph_filters += "MATCH (p)-[:TARGETS_GROUP]->(t:TargetGroup) WHERE t.name IN $target_group\n"
+    if theme:
+        graph_filters += "MATCH (p)-[:RELATES_TO]->(th:Theme) WHERE th.name IN $theme\n"
+
+    params = {
+        "life_cycle": life_cycle,
+        "target_group": target_group,
+        "theme": theme,
+        "threshold": 0.63
+    }
+
+    records = []
+
+    # 검색어 보강 
+    if policy_names:
+        print(f"Full-Text 검색 시도 ({policy_names})")
+        # 배열을 OR 조건 문자열로 조립 (예: "장애인연금 OR 장애수당")
+        ft_query_string = " OR ".join(policy_names)
+        params["ft_query"] = ft_query_string
+        
+       
+        cypher_ft = f"""
+        CALL db.index.fulltext.queryNodes('policy_name_index', $ft_query) YIELD node AS p, score AS ft_score
+        {graph_filters}
+        OPTIONAL MATCH (p)-[:MANAGED_BY]->(d:Department)
+        OPTIONAL MATCH (p)-[:PROVIDES]->(s:SupportType)
+        RETURN p.servId AS id, p.servNm AS title, p.servDgst AS digest, 
+               d.name AS department, s.name AS support_type, ft_score AS score
+        LIMIT 3
+        """
+        records = graph.query(cypher_ft, params=params)
+
+    if (not policy_names) or (not records):
+        print("벡터 검색 시도")
+        
+        # 쿼리 확장: 벡터 검색의 정확도를 높이기 위해 확장된 키워드들을 모두 합쳐서 임베딩
+        combined_query = f"{latest_message} " + " ".join(policy_names + life_cycle + target_group + theme)
+        query_embedding = query_emb_model.embed_query(combined_query)
+        params["query_embedding"] = query_embedding
+        
+        cypher_vec = f"""
+        CALL db.index.vector.queryNodes('chunk_embedding_index', 15, $query_embedding) YIELD node AS c, score AS vec_score
+        MATCH (p:Policy)-[:HAS_INFO]->(c)
+        {graph_filters}
+        WITH p, max(vec_score) AS max_score
+        WHERE max_score >= $threshold
+        ORDER BY max_score DESC
+        LIMIT 5
+        OPTIONAL MATCH (p)-[:MANAGED_BY]->(d:Department)
+        OPTIONAL MATCH (p)-[:PROVIDES]->(s:SupportType)
+        RETURN p.servId AS id, p.servNm AS title, p.servDgst AS digest, 
+               d.name AS department, s.name AS support_type, max_score AS score
+        """
+        records = graph.query(cypher_vec, params=params)
+
+
     
-    similarity_threshold = 0.63
-    records = graph.query(cypher_query, params={"query_embedding": query_embedding,
-                                                "threshold": similarity_threshold})
-    
-    # 텍스트 가공
     if not records:
         formatted_results = "조건에 맞는 복지 정책을 찾지 못했습니다."
+        rec_ids, rec_names = [], []
     else:
         result_texts = []
-        rec_ids = []
-        rec_names = []
+        rec_ids, rec_names = [], []
+        
         for i, record in enumerate(records):
-            # score(유사도)가 반환되므로, 내부 디버깅이나 컷오프(Cut-off) 기준으로 활용할 수 있습니다.
             rec_ids.append(record['id'])
             rec_names.append(record['title'])
             text = (
-                f"설정한 임계 점수: {similarity_threshold}\n"
-                f"[{i+1}순위] 정책명: {record['title']} )\n"
+                f"[{i+1}순위] 정책명: {record['title']} (Score: {record['score']:.4f})\n"
                 f"- 담당부처: {record.get('department', '정보없음')}\n"
                 f"- 제공유형: {record.get('support_type', '정보없음')}\n"
-                f"- 요약: {record['digest']}\n"
-                f"-" * 30
-            )
+                f"- 요약: {record['digest']}\n")+ f"{'-' * 30}"
+            
             result_texts.append(text)
-        
+            
         formatted_results = "\n".join(result_texts)
         
-    print(f"{len(records)}개 검색 완료")
-    print(f"{rec_ids}")
-    print(f"{rec_names}")
+        print(f"{len(records)}개 정책 검색: {rec_names}")
     
-    for i, rec in enumerate(records):
-        print(f"[{i+1}] {rec['title']} - Score: {rec['score']:.4f}")
-    
- 
+
+   
     return {
-        "search_results": "\n".join(result_texts),
-        "recommended_ids": rec_ids,       # 리스트 형태 보존
-        "recommended_names": rec_names    # 리스트 형태 보존
+        "search_results": formatted_results,
+        "recommended_ids": rec_ids,       
+        "recommended_names": rec_names    
     }
 
 
