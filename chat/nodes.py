@@ -1,14 +1,12 @@
 import os
 from dotenv import load_dotenv, find_dotenv
-from langchain_upstage.embeddings import UpstageEmbeddings
 from langchain_neo4j import Neo4jGraph
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import AIMessage
 from langchain_upstage import ChatUpstage
-
+from langchain_upstage.embeddings import UpstageEmbeddings
 
 from state import AgentState, IntentClassification
-
-
 from prompts import (
     INTENT_SYSTEM_PROMPT, 
     ANSWER_SYSTEM_PROMPT, 
@@ -58,10 +56,10 @@ intent_chain = intent_prompt | structured_llm
 def classify_intent_node(state: AgentState):
 
     messages = state["messages"]
-    
     result = intent_chain.invoke({"messages": messages})
 
     policy_names = getattr(result, 'policy_names', [])
+    search_keywords = getattr(result, 'search_keywords', [])
     life_cycle = getattr(result, 'life_cycle', [])
     target_group = getattr(result, 'target_group', [])
     theme = getattr(result, 'theme', [])
@@ -75,13 +73,15 @@ def classify_intent_node(state: AgentState):
 
         
     print(f"분석 결과: {final_intent} (이유: {result.reasoning})")
-    print(f"추출된 정책명: {result.policy_names}")
-    print(f"추출된 조건: 생애({result.life_cycle}), 가구({result.target_group}), 주제({result.theme})")
+    print(f"추출된 정책명: {policy_names}")
+    print(f"추출된 키워드: {search_keywords}")
+    print(f"추출된 조건: 생애({life_cycle}), 가구({target_group}), 주제({theme})")
     print("\n\n")
     
     
     return {
         "intent": final_intent,
+        "search_keywords": search_keywords,
         "policy_names": result.policy_names,
         "life_cycle": result.life_cycle,
         "target_group": result.target_group,
@@ -124,6 +124,7 @@ def execute_search_node(state: AgentState):
     # 마지막 쿼리, 조건 추출
     latest_message = state["current_query"]
     policy_names = state.get("policy_names", [])
+    search_keywords = state.get("search_keywords", [])
     life_cycle = state.get("life_cycle", [])
     target_group = state.get("target_group", [])
     theme = state.get("theme", [])
@@ -146,13 +147,12 @@ def execute_search_node(state: AgentState):
 
     records = []
 
-    # 검색어 보강 
-    if policy_names:
-        print(f"Full-Text 검색 시도 ({policy_names})")
-        # 배열을 OR 조건 문자열로 조립 (예: "장애인연금 OR 장애수당")
-        ft_query_string = " OR ".join(policy_names)
+    # full-text 검색
+    search_terms = list(set(policy_names + search_keywords))
+    if search_terms:
+        print(f"Full-Text 검색 시도 ({search_terms})")
+        ft_query_string = " AND ".join(search_terms) # 키워드들을 모두 포함하는 엄격한 검색
         params["ft_query"] = ft_query_string
-        
        
         cypher_ft = f"""
         CALL db.index.fulltext.queryNodes('policy_name_index', $ft_query) YIELD node AS p, score AS ft_score
@@ -163,13 +163,18 @@ def execute_search_node(state: AgentState):
                d.name AS department, s.name AS support_type, ft_score AS score
         LIMIT 3
         """
-        records = graph.query(cypher_ft, params=params)
-
-    if (not policy_names) or (not records):
-        print("벡터 검색 시도")
+        try:
+            records = graph.query(cypher_ft, params=params)
+            print(f"full-context 검색 결과: {records}")
+        except Exception as e:
+            print(f"Full-Text 검색 중 예외 발생 (무시하고 벡터로 전환): {e}")
+            records = []
         
-        # 쿼리 확장: 벡터 검색의 정확도를 높이기 위해 확장된 키워드들을 모두 합쳐서 임베딩
-        combined_query = f"{latest_message} " + " ".join(policy_names + life_cycle + target_group + theme)
+        
+
+    if not records:
+        print("벡터 검색 시도")
+        combined_query = f"{latest_message} " + " ".join(search_terms + life_cycle + target_group + theme)
         query_embedding = query_emb_model.embed_query(combined_query)
         params["query_embedding"] = query_embedding
         
