@@ -14,13 +14,19 @@ server = FastAPI(
     description="RAG 기반 복지 정책 안내 챗봇 서버입니다."
 )
 
+origins = [
+    "https://my-react-native-web.com", # (웹으로 배포할 경우) 실제 도메인
+    "http://localhost:3000",           # 웹 로컬 테스트용
+    "http://localhost:8081",           # React Native(Metro) 로컬 테스트용
+]
+
 # !!!!!!여기 추후 수정
 server.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 모든 출처(바탕화면 파일 포함)에서의 접근을 허락함
+    allow_origins=origins,  # 모든 출처(바탕화면 파일 포함)에서의 접근을 허락함
     allow_credentials=True,
-    allow_methods=["*"],  # GET, POST 등 모든 통신 방식 허락
-    allow_headers=["*"],  # 모든 데이터 헤더 허락
+    allow_methods=["GET", "POST", "OPTIONS"],  # GET, POST 등 모든 통신 방식 허락
+    allow_headers=["Content-Type", "Authorization"],  # 모든 데이터 헤더 허락
 )
 
 
