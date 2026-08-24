@@ -39,6 +39,10 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     bot_reply: str           # 챗봇의 답변
 
+
+# 서버 헬스체크
+
+
 # 엔드포인트(창구) 만들기
 @server.post("/chat", response_model=ChatResponse)
 def chat_with_bot(request: ChatRequest):
@@ -58,3 +62,9 @@ def chat_with_bot(request: ChatRequest):
     
     # 포장해서(Response 형식) 손님에게 반환
     return ChatResponse(bot_reply=final_message)
+
+
+
+@server.get("/Health")
+def health_check():
+    return {"status":"ok"}

@@ -1,98 +1,95 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, Button, StyleSheet, ActivityIndicator } from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { sendChatMessage } from '../../api/chatApi'; 
 
-export default function HomeScreen() {
+export default function IndexScreen() {
+  // 화면에서 상태를 관리하기 위한 변수들 (기억 장치)
+  const [inputText, setInputText] = useState<string>(''); // 내가 입력하는 글
+  const [replyText, setReplyText] = useState<string>('여기에 챗봇 답변이 표시됩니다.'); // 봇의 답변
+  const [isLoading, setIsLoading] = useState<boolean>(false); // 로딩 상태
+
+  // 전송 버튼을 눌렀을 때 실행될 함수
+  const handleSend = async () => {
+    // 빈칸이면 안 보내기
+    if (inputText.trim() === '') return;
+
+    setIsLoading(true);
+    setReplyText('서버에서 답변을 가져오는 중입니다... ⏳');
+
+    // API 통신 시도
+    // 테스트용이므로 session_id는 임의로 'test-123'을 넣었습니다.
+    const response = await sendChatMessage('test-123', inputText);
+    
+    // 받아온 답변을 화면에 띄우기 위해 변수 업데이트
+    setReplyText(response);
+    setIsLoading(false);
+    setInputText(''); // 입력창 비우기
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: modal</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <View style={styles.container}>
+      <Text style={styles.title}>🔌 API 통신 테스트 🔌</Text>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      {/* 챗봇의 답변을 보여주는 영역 */}
+      <View style={styles.replyBox}>
+        {isLoading ? (
+          <ActivityIndicator size="large" color="#0000ff" />
+        ) : (
+          <Text style={styles.replyText}>{replyText}</Text>
+        )}
+      </View>
+
+      {/* 글자를 입력하는 영역 */}
+      <TextInput
+        style={styles.input}
+        value={inputText}
+        onChangeText={setInputText}
+        placeholder="챗봇에게 보낼 메시지를 입력하세요"
+      />
+
+      {/* 전송 버튼 */}
+      <Button 
+        title={isLoading ? "전송 중..." : "서버로 보내기"} 
+        onPress={handleSend} 
+        disabled={isLoading} 
+      />
+    </View>
   );
 }
 
+// 최소한의 구분을 위한 아주 단순한 스타일
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'center',
+    backgroundColor: '#fff',
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  replyBox: {
+    minHeight: 150,
+    padding: 15,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    marginBottom: 20,
+    justifyContent: 'center',
+  },
+  replyText: {
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+    fontSize: 16,
   },
 });
