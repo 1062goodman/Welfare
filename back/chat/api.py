@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage
 
 
 from graph import app 
-from tasks import session_timestamp
+from tasks import session_timestamps
 
 
 router = APIRouter()
@@ -33,7 +33,7 @@ def chat_with_bot(request: ChatRequest):
     # LangGraph에 전달할 설정 (어떤 사용자의 대화 기록을 꺼낼지 지정)
     config = {"configurable": {"thread_id": request.session_id}}
 
-    session_timestamp[request.session_id] = datetime.now()
+    session_timestamps[request.session_id] = datetime.now()
 
     # 챗봇(app)에게 질문 던지기 (주방으로 전달)
     result_state = app.invoke(
