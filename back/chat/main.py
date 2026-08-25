@@ -1,43 +1,56 @@
 import os
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv, find_dotenv
-from langchain_core.messages import HumanMessage
+from fastapi.middleware.cors import CORSMiddleware 
+import asyncio
+
 
 # 환경변수 
 load_dotenv(find_dotenv())
 
 #
 from graph import app
+from api import router
+from tasks import clean_expired_session
 
-def run_chatbot():
-    print("대화 시작되었습니다! (종료: 'q')")
-    print("-" * 50)
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    cleaner_task = asyncio.create_task(session_cleaner_task())
     
-    # 그래프를 순환할 초기 화물칸(상태) 세팅
-    current_state = {"messages": []}
+    yield  
     
+    cleaner_task.cancel()
+
+
+server = FastAPI(
+    title="대한민국 복지 정책 챗봇 API",
+    description="RAG 기반 복지 정책 안내 챗봇 서버입니다.",
+    lifespan=lifespan
+)
+
+origins = [
+    "https://my-react-native-web.com", # (웹으로 배포할 경우) 실제 도메인
+    "http://localhost:3000",           # 웹 로컬 테스트용
+    "http://localhost:8081",           # React Native(Metro) 로컬 테스트용
+]
+
+# !!!!!!여기 추후 수정
+server.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # 모든 출처(바탕화면 파일 포함)에서의 접근을 허락함
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],  # GET, POST 등 모든 통신 방식 허락
+    allow_headers=["Content-Type", "Authorization"],  # 모든 데이터 헤더 허락
+)
+
+server.include_router(router)
+
+
+    
+async def session_cleaner_task():
     while True:
-        user_input = input("사용자: ")
-        
-        if user_input.lower() in ['q']:
-            print("종료합니다.")
-            break
-
-        elif len(user_input) >= 1000:
-            print("글자수가 너무 많습니다.")
-            continue
-        # 리스트에 넣기
-        current_state["messages"].append(HumanMessage(content=user_input))
-        
-        # LangGraph 챗봇 실행
-        result_state = app.invoke(current_state)
-        
-       
-        ai_response = result_state["messages"][-1].content
-        print(f"\n답변: {ai_response}\n")
-        
-        
-       
-        current_state["messages"] = result_state["messages"]
-
-if __name__ == "__main__":
-    run_chatbot()
+        clean_expired_session(app.memory)
+        await asyncio.sleep(60 * 60)
