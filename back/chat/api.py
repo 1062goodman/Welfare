@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage
 from graph import app 
 from tasks import session_timestamps
 
-open_api=os.get("OPENAI")
+open_api=os.getenv("OPENAI")
 router = APIRouter()
 
 
