@@ -1,3 +1,4 @@
+import os
 import uuid
 from datetime import datetime
 from fastapi import APIRouter
@@ -8,7 +9,7 @@ from langchain_core.messages import HumanMessage
 from graph import app 
 from tasks import session_timestamps
 
-
+open_api=os.get("OPENAI")
 router = APIRouter()
 
 
@@ -20,9 +21,6 @@ class ChatRequest(BaseModel):
 # 손님에게 줄 영수증(Response) 양식 정의
 class ChatResponse(BaseModel):
     bot_reply: str           # 챗봇의 답변
-
-
-# 서버 헬스체크
 
 
 # 엔드포인트(창구) 만들기
@@ -49,6 +47,39 @@ def chat_with_bot(request: ChatRequest):
 
 
 
-@router.get("/Health")
+
+class ChatRequest(BaseModel):
+    session_id: str          # 사용자 구분용 ID (단톡방 번호 같은 역할)
+   
+
+@router.post("/transcribe")
+async def transcribe_audio(audio_file: UploadFile = File(...)):
+   
+    user_text = "음성 인식된 텍스트."
+    
+    return {"recognized_text": user_text}
+
+
+# 서버체크------------------------------------------------
+@router.get("/Health", response_model=bool)
 def health_check():
-    return {"status":"ok"}
+    return True
+
+
+# 음성인식------------------------------------------------ 지금은 파일배치. 추후에 리얼타임 스트리밍으로 고도화
+import openai
+from fastapi import UploadFile, File
+
+client = openai.OpenAI(api_key=open_api)
+
+
+@router.post("/transcribe")
+async def transcribe_audio(audio_file: UploadFile = File(...)):
+    
+    transcript = client.audio.transcriptions.create(
+        model="whisper-1",
+        file=(audio_file.filename, audio_file.file, audio_file.content_type)
+    )
+    
+    
+    return {"recognized_text": transcript.text}
