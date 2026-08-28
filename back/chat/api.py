@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 import uuid
 from datetime import datetime
 from fastapi import APIRouter
@@ -9,6 +10,7 @@ from langchain_core.messages import HumanMessage
 from graph import app 
 from tasks import session_timestamps
 
+load_dotenv()
 open_api=os.getenv("OPENAI")
 router = APIRouter()
 
@@ -76,3 +78,5 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
     
     
     return {"recognized_text": transcript.text}
+
+
