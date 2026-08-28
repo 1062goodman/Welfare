@@ -52,13 +52,6 @@ class ChatRequest(BaseModel):
     session_id: str          # 사용자 구분용 ID (단톡방 번호 같은 역할)
    
 
-@router.post("/transcribe")
-async def transcribe_audio(audio_file: UploadFile = File(...)):
-   
-    user_text = "음성 인식된 텍스트."
-    
-    return {"recognized_text": user_text}
-
 
 # 서버체크------------------------------------------------
 @router.get("/Health", response_model=bool)
