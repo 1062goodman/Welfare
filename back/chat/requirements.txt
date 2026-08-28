@@ -8,3 +8,4 @@ langchain-upstage==0.7.7
 langchain-neo4j==0.10.0
 python-dotenv==1.2.2
 requests==2.33.1
+python-multipart
