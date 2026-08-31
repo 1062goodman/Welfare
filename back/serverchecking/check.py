@@ -1,7 +1,7 @@
 import requests
 import time
 
-SERVER_URL = 'https://welfare-1gs5.onrender.com/health'
+SERVER_URL = 'https://welfare-1gs5.onrender.com/Health'
 
 while 1:
     statement = requests.get(url=SERVER_URL, timeout=300)

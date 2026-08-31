@@ -10,10 +10,10 @@ from langchain_core.messages import HumanMessage
 from graph import app 
 from tasks import session_timestamps
 
-load_dotenv()
-open_api=os.getenv("OPENAI")
+
 router = APIRouter()
 
+# 채팅------------------------------------------------
 
 # 손님이 보낼 주문서(Request) 양식 정의 (Pydantic 사용)
 class ChatRequest(BaseModel):
@@ -49,10 +49,36 @@ def chat_with_bot(request: ChatRequest):
 
 
 
+# 채팅내역 가져오기------------------------------------------------ 토큰 검증 로직 추가해야함
+from typing import List
+import uuid
 
-class ChatRequest(BaseModel):
-    session_id: str          # 사용자 구분용 ID (단톡방 번호 같은 역할)
-   
+class MessageHistoryResponse(BaseModel):
+    id: str
+    text: str
+    isUser: bool
+
+@router.get("/chat/history/{session_id}", response_model=List[MessageHistoryResponse])
+def get_chat_history(session_id: str):
+    config = {"configurable": {"thread_id": session_id}}
+    
+    # LangGraph에서 해당 세션의 전체 상태(대화 기록) 꺼내기
+    state = app.get_state(config)
+    
+    # 대화 기록이 아예 없으면 빈 리스트 반환
+    if not state.values or "messages" not in state.values:
+        return []
+    
+    history = []
+    # 3. LangGraph의 메시지 객체들을 프론트엔드용 JSON 양식으로 변환
+    for msg in state.values["messages"]:
+        history.append(MessageHistoryResponse(
+            id=msg.id if hasattr(msg, 'id') and msg.id else str(uuid.uuid4()),
+            text=msg.content,
+            isUser=msg.type == "human" # human이면 True(내 메시지), ai면 False(챗봇)
+        ))
+        
+    return history
 
 
 # 서버체크------------------------------------------------
@@ -65,7 +91,7 @@ def health_check():
 import openai
 from fastapi import UploadFile, File
 
-client = openai.OpenAI(api_key=open_api)
+client = openai.OpenAI()
 
 
 @router.post("/transcribe")

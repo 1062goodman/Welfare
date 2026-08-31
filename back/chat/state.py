@@ -60,3 +60,7 @@ class AgentState(TypedDict):
     search_results: str # Neo4j DB에서 검색해 온 최종 정책 데이터
     recommended_ids: List[str]   #찾아온 정책 기억
     recommended_names: List[str]
+
+
+
+print(AgentState.__annotations__)

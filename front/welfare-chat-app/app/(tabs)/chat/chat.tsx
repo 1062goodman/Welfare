@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
 
-import { get_chat_history, sendChatMessage } from '../../api/chatApi';
-import { getSessionId } from '../../utils/sessionManager';
+import { get_chat_history, sendChatMessage } from '../../../api/chatApi';
+import { getSessionId } from '../../../utils/sessionManager';
 
 
 
