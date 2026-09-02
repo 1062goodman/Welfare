@@ -73,4 +73,4 @@ workflow.add_edge("block_attack", END)
 
 # 최종 앱으로 컴파일
 memory = MemorySaver()
-app = workflow.compile()
+app = workflow.compile(checkpointer=memory)

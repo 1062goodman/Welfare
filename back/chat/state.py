@@ -62,5 +62,3 @@ class AgentState(TypedDict):
     recommended_names: List[str]
 
 
-
-print(AgentState.__annotations__)

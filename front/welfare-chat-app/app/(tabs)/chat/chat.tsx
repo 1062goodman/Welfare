@@ -22,6 +22,7 @@ export default function ChatScreen() {
         setSessionId(session);
 
         const history =  await get_chat_history(session); //세션에 맞는 내역 가져옴
+        console.log("🚨 새로고침 후 세션 ID 유지되나?:", session);
         setMessages(history);
       }
       catch(error){
