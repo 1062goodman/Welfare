@@ -15,7 +15,7 @@ from api import router
 from tasks import clean_expired_session
 
 
-
+#루프 돌려짐
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
     cleaner_task = asyncio.create_task(session_cleaner_task())
@@ -40,10 +40,10 @@ origins = [
 # !!!!!!여기 추후 수정
 server.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # 모든 출처(바탕화면 파일 포함)에서의 접근을 허락함
+    allow_origins=origins,  # 출처에서의 접근을 허락함
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],  # GET, POST 등 모든 통신 방식 허락
-    allow_headers=["Content-Type", "Authorization"],  # 모든 데이터 헤더 허락
+    allow_headers=["*"],  
 )
 
 server.include_router(router)
