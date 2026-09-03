@@ -56,7 +56,10 @@ intent_chain = intent_prompt | structured_llm
 def classify_intent_node(state: AgentState):
 
     messages = state["messages"]
-    result = intent_chain.invoke({"messages": messages})
+    current_names = state.get("current_recommended_names", [])
+
+    result = intent_chain.invoke({"messages": messages,
+                                  "current_recommendations":current_names})
 
     policy_names = getattr(result, 'policy_names', [])
     search_keywords = getattr(result, 'search_keywords', [])
@@ -222,7 +225,9 @@ def execute_search_node(state: AgentState):
     return {
         "search_results": formatted_results,
         "recommended_ids": rec_ids,       
-        "recommended_names": rec_names    
+        "recommended_names": rec_names,
+        "current_recommended_ids": rec_ids,
+        "current_recommended_names": rec_names 
     }
 
 
@@ -231,37 +236,59 @@ def execute_search_node(state: AgentState):
 def execute_detail_search_node(state: AgentState):
     print("상세 정보 가져오기")
     
-    target = state.get("target_policy", "")
-    rec_ids = state.get("recommended_ids", [])
+    targets = state.get("target_policy", [])
+    curr_ids = state.get("current_recommended_ids", [])
+    all_ids = state.get("recommended_ids", [])
+    all_names = state.get("recommended_names", [])
     
     # 예외처리: 추천해 둔 ID가 없을 때
-    if not rec_ids:
+    if not all_ids:
         return {"search_results": "이전에 추천해 드린 정책 목록이 없어 상세 정보를 가져올 수 없습니다. 다시 검색해 주세요."}
     
-    # 사용자의 발화에서 번호 유추 (1번, 2번, 3번)
-    target_id = rec_ids[0] # 기본값 (알 수 없으면 1번)
-    if "1" in target or "첫" in target: target_id = rec_ids[0]
-    elif "2" in target or "두" in target and len(rec_ids) > 1: target_id = rec_ids[1]
-    elif "3" in target or "세" in target and len(rec_ids) > 2: target_id = rec_ids[2]
+    matched_ids = []
+
+    for target in targets:
+        # 순수 숫자인 경우 -> int()로 변환 후 -1을 하여 현재 화면(current) 인덱스로 매칭
+        if target.isdigit():
+            idx = int(target) - 1
+            if 0 <= idx < len(curr_ids):
+                matched_ids.append(curr_ids[idx])
+        else:
+            # 숫자가 아닌 문자열(이름)인 경우 -> 전체 누적 이름(all_names) 목록에서 탐색
+            for idx, name in enumerate(all_names):
+                if target in name or name in target:
+                    matched_ids.append(all_ids[idx])
+
+    if not matched_ids and curr_ids:
+        matched_ids.append(curr_ids[0])
+        print("오류: 매치되는 정책없음")
     
     cypher_query = """
-    MATCH (p:Policy {servId: $target_id})-[:HAS_INFO]->(c:Chunk)
-    RETURN p.servNm AS title, c.type AS type, c.content AS content
+    MATCH (p:Policy) WHERE p.servId IN $target_ids
+    MATCH (p)-[:HAS_INFO]->(c:Chunk)
+    RETURN p.servId AS id, p.servNm AS title, c.type AS type, c.content AS content
     """
     
-    records = graph.query(cypher_query, params={"target_id": target_id})
+    records = graph.query(cypher_query, params={"target_ids": matched_ids})
     
     if not records:
         return {"search_results": "해당 정책의 상세 정보를 찾을 수 없습니다."}
-    
+
+    details_by_policy = {}
+    for r in records:
+        pid = r['id']
+        if pid not in details_by_policy:
+            details_by_policy[pid] = {"title": r['title'], "chunks": []}
+        details_by_policy[pid]["chunks"].append(f"■ {r['type']}\n{r['content']}")
+
     # 상세 정보 텍스트 가공
-    title = records[0]['title']
-    detail_text = f"[{title}] 상세 정보입니다.\n\n"
-    for record in records:
-        detail_text += f"■ {record['type']}\n{record['content']}\n\n"
+    result_texts = []
+    for pid, data in details_by_policy.items():
+        text = f"[{data['title']}] 상세 정보\n\n" + "\n\n".join(data['chunks']) + "\n" + "="*40
+        result_texts.append(text)
         
   
-    return {"search_results": detail_text}
+    return {"search_results": "\n\n".join(result_texts)}
 
 
 from langchain_core.messages import AIMessage

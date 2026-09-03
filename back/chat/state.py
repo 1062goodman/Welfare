@@ -36,10 +36,10 @@ class IntentClassification(BaseModel):
         default_factory=list,
         description="질문에서 파악된 주제 조건"
     )
-
-    target_policy: str = Field(
-        default="",
-        description="상세요구일 경우, 사용자가 지목한 정책의 이름이나 번호 (예: '1번', '첫번째', '햇살론')"
+    #상세요구 타겟정책
+    target_policy: List[str] = Field(
+        default_factory=list,
+        description="의도가 '상세요구'일 경우, 사용자가 지목한 정책의 이름이나 번호를 추출할 것. 단 사용자가 지목한 번호의 경우 '1번', '첫번째' 등 수식어를 제외하고 오직 순수 숫자 문자열만 추출할 것 (예: ['1', '2', '국민연금', '5', '청년퇴직금지원'] ) "
     )
     reasoning: str = Field(
         description="해당 의도로 분류한 논리적인 이유 (내부 확인용)"
@@ -57,8 +57,12 @@ class AgentState(TypedDict):
     target_group: List[str]
     theme: List[str]
 
-    search_results: str # Neo4j DB에서 검색해 온 최종 정책 데이터
-    recommended_ids: List[str]   #찾아온 정책 기억
-    recommended_names: List[str]
+    #검색 누적 보관함
+    search_results: str # Neo4j DB에서 검색해 온 최종 정책 데이터 
+    recommended_ids: Annotated[List[str], operator.add]   #찾아온 정책 기억
+    recommended_names: Annotated[List[str], operator.add]
+
+    current_recommended_ids: List[str]
+    current_recommended_names: List[str]
 
 
