@@ -62,6 +62,7 @@ class AgentState(TypedDict):
     recommended_ids: Annotated[List[str], operator.add]   #찾아온 정책 기억
     recommended_names: Annotated[List[str], operator.add]
 
+    target_policy: List[str]
     current_recommended_ids: List[str]
     current_recommended_names: List[str]
 

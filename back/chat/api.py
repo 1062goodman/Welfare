@@ -87,14 +87,66 @@ def health_check():
     return True
 
 
-# 음성인식------------------------------------------------ 지금은 파일배치. 추후에 리얼타임 스트리밍으로 고도화
+# 음성인식
+import io
+from fastapi import WebSocket, WebSocketDisconnect
+
+@router.websocket("ws/chat/{session_id}")
+async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
+    await websocket.accept()
+    print("{sessio_id} 웹소켓 연결")
+
+    audio_buffer = io.BytesIO() # 오디오 데이터 버퍼
+
+    try:
+        while True:
+
+            message = await websocket.receive()
+
+            if "bytes" in message:
+                audio_buffer.write(message["bytes"])
+
+            elif "text" in message:  # 제어 신호 처리
+                command = message["text"]
+
+                if command == "STOP_RECORDING": #녹음 완료되면 
+                    audio_bytes = audio_buffer.getvalue()
+
+                    if len(audio_bytes) > 0:
+                        audio_file = ("audio.wav", io.BytesIO(audio_bytes), "audio/wav")
+
+                        transcript = client.audio.transcriptions.create(
+                            model = "whisper-1",
+                            file = audio_file
+                        )
+
+                        user_message = transcript.text
+                        print(f"{session_id} 음성 인식 결과: {user_message}")
+
+                        audio_buffer = io.BytesIO()
+
+                        await websocket.send_json({"recognized_text": user_message})
+
+    except WebSocketDisconnect:
+        print(f"[{session_id}] WebSocket 연결 종료됨")
+    except Exception as e:
+        print(f"[{session_id}] WebSocket 오류 발생: {e}")
+        await websocket.send_json({
+            "status": "error", 
+            "message": str(e)
+        })
+
+    
+
+
+#------------------------------------------------ 파일배치 미완
 import openai
 from fastapi import UploadFile, File
 
 client = openai.OpenAI()
 
 
-@router.post("/transcribe")
+@router.post("/File")
 async def transcribe_audio(audio_file: UploadFile = File(...)):
     
     transcript = client.audio.transcriptions.create(
@@ -104,5 +156,4 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
     
     
     return {"recognized_text": transcript.text}
-
 

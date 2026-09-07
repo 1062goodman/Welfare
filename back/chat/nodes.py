@@ -66,10 +66,13 @@ def classify_intent_node(state: AgentState):
     life_cycle = getattr(result, 'life_cycle', [])
     target_group = getattr(result, 'target_group', [])
     theme = getattr(result, 'theme', [])
+    target_policy = getattr(result, 'target_policy', [])
 
     filled_slots_count = sum(1 for slot in [life_cycle, target_group, theme] if len(slot) > 0)
 
-    if len(policy_names) > 0 or filled_slots_count >= 2:
+    if len(target_policy) > 0:
+        final_intent = "상세요구"
+    elif len(policy_names) > 0 or filled_slots_count >= 2:
         final_intent = "검색가능"
     else:
         final_intent = "조건부족"
