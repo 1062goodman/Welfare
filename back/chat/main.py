@@ -40,9 +40,9 @@ origins = [
 # !!!!!!여기 추후 수정
 server.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # 출처에서의 접근을 허락함
+    allow_origins=["*"],  # 출처에서의 접근을 허락함
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],  # GET, POST 등 모든 통신 방식 허락
+    allow_methods=["*"], #["GET", "POST", "OPTIONS"],  # GET, POST 등 모든 통신 방식 허락
     allow_headers=["*"],  
 )
 
