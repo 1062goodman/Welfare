@@ -91,10 +91,10 @@ def health_check():
 import io
 from fastapi import WebSocket, WebSocketDisconnect
 
-@router.websocket("ws/chat/{session_id}")
+@router.websocket("/ws/chat/{session_id}")
 async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
-    print("{sessio_id} 웹소켓 연결")
+    print(f"{session_id} 웹소켓 연결")
 
     audio_buffer = io.BytesIO() # 오디오 데이터 버퍼
 

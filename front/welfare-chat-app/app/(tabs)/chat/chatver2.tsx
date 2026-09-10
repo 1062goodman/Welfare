@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform, PermissionsAndroid } from 'react-native';
 import LiveAudioStream from 'react-native-live-audio-stream';
 import { Buffer } from 'buffer';
@@ -15,9 +15,39 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState([{ id: '1', text: '안녕하세요! 복지 정책 챗봇입니다.', isUser: false }]);
   const [inputText, setInputText] = useState('');
   const [sessionid, setSessionId] = useState<string>('');
-  const [state,  setStatus] = useState('연결 대기 중...');
-    
-    
+  const [status,  setStatus] = useState('연결 대기 중...');
+  const [wsStatus,  setWsStatus] = useState<'connecting' | 'open' | 'closed'>('connecting');
+
+
+  const ws = useRef<WebSocket|null>(null);
+  const SERVER_URL = 'wss://welfare-1gs5.onrender.com/ws/chat/test_session_1';    
+  
+  const connetWebSocket = () =>{
+      setWsStatus('connecting');
+      ws.current = new WebSocket(SERVER_URL);
+
+      ws.current.onopen = () => {
+      setStatus('소켓 연결 성공');
+      setWsStatus('open');
+      };
+
+      ws.current.onclose = () => {
+      setStatus('소켓 연결 끊어짐');
+      setWsStatus('closed');
+      };
+ 
+      ws.current.onerror = (e) => {
+      setStatus(`소켓 에러: ${(e as any).message}`);
+      setWsStatus('closed');
+      };
+ 
+      ws.current.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.recognized_text) setInputText(data.recognized_text);
+      };
+    };
+
+
   //화면이 켜질때 한 번 실행
   useEffect(() => {
 
@@ -38,9 +68,13 @@ export default function ChatScreen() {
             bitsPerSample: 16,
             audioSource: 6,
             bufferSize: 4096 
-          }as any) ;``
+          }as any) ;
           
         }
+
+    setupMic();
+    connetWebSocket(); 
+
     const loadChatroom = async() => {
       try{
         const session = await getSessionId();
@@ -55,12 +89,43 @@ export default function ChatScreen() {
       }
     };
 
+
+    LiveAudioStream.on('data', (base64Chunk) => {
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        // Base64를 순수 바이너리(ArrayBuffer)로 변환하여 전송
+        const binaryData = Buffer.from(base64Chunk, 'base64');
+        const arraybuffer = binaryData.buffer.slice(binaryData.byteOffset, binaryData.byteOffset + binaryData.byteLength)
+        ws.current.send(arraybuffer);
+      }
+    });
     
     loadChatroom();
+
+    return () => {
+    if (ws.current) ws.current.close();
+    LiveAudioStream.stop();
+  };
   }, []);
    
   
 
+  const startRecording = () => {
+    setStatus('녹음 중... (데이터 전송)');
+    LiveAudioStream.start();
+    };
+
+  const stopRecording = () => {
+    LiveAudioStream.stop();
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send('STOP_RECORDING');
+      setStatus('서버 변환 대기 중...');
+    } else {
+      setStatus('소켓이 연결되어 있지 않습니다.');
+    }
+    };
+  
+
+  
 
   // 전송 버튼을 눌렀을 때 할 일
   const handleSend = async () => {
@@ -110,6 +175,20 @@ export default function ChatScreen() {
         keyExtractor={(item) => item.id}
         style={styles.chatList}
       />
+      {(wsStatus ==='closed') && 
+      (<TouchableOpacity style={styles.micButton} onPress={connetWebSocket}>
+        <Text style={styles.micButtonText}>🔄 다시 연결</Text>
+      </TouchableOpacity>)}
+      <Text style={styles.statusText}>{wsStatus}</Text>
+      <Text style={styles.statusText}>{status}</Text>
+      <View style={styles.voiceArea}>
+      <TouchableOpacity style={styles.micButton} onPress={startRecording}>
+        <Text style={styles.micButtonText}>🎤 녹음 시작</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={[styles.micButton, styles.stopButton]} onPress={stopRecording}>
+        <Text style={styles.micButtonText}>■ 녹음 종료</Text>
+      </TouchableOpacity>
+    </View>
 
       {/* 아래쪽: 입력창과 전송 버튼 */}
       <View style={styles.inputArea}>
@@ -140,4 +219,21 @@ const styles = StyleSheet.create({
   input: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 20, paddingHorizontal: 15, marginRight: 10 },
   sendButton: { justifyContent: 'center', backgroundColor: '#007AFF', paddingHorizontal: 15, borderRadius: 20 },
   sendButtonText: { color: 'white', fontWeight: 'bold' },
+  micButtonText: {color: 'white',fontWeight: 'bold',},
+  micButton: {backgroundColor: '#007AFF',paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20,},
+  voiceArea: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    backgroundColor: 'white',
+  },
+  statusText: {
+    textAlign: 'center',
+    paddingVertical: 6,
+    color: '#666',
+    fontSize: 13,
+    backgroundColor: '#eee',
+  },
+   stopButton: {backgroundColor: '#FF3B30',},
 });
