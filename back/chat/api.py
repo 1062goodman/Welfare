@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage
 
 
 from graph import app 
-from tasks import session_timestamps
+from back.chat.tasks import session_timestamps
 
 
 router = APIRouter()
@@ -90,6 +90,19 @@ def health_check():
 # 음성인식
 import io
 from fastapi import WebSocket, WebSocketDisconnect
+import wave 
+
+def add_wav_header(pcm_byte: bytes, sample_rate = 16000, channels=1, bits =16) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(bits // 8)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_byte)
+
+    return buf.getvalue()
+
+
 
 @router.websocket("/ws/chat/{session_id}")
 async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
@@ -113,7 +126,8 @@ async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
                     audio_bytes = audio_buffer.getvalue()
 
                     if len(audio_bytes) > 0:
-                        audio_file = ("audio.wav", io.BytesIO(audio_bytes), "audio/wav")
+                        wav_bytes = add_wav_header(audio_bytes)
+                        audio_file = ("audio.wav", io.BytesIO(wav_bytes), "audio/wav") #파일 만들기
 
                         transcript = client.audio.transcriptions.create(
                             model = "whisper-1",

@@ -64,3 +64,19 @@ or
 - npm run ios # you need to use macOS to build the iOS project - use the Expo app if you need to do iOS development without a Mac
 - npm run web
 
+------------------------------------------
+폴더 구조 
+ㅏㅡ app  화면 (경로)
+ㅣ   ㅏㅡ latout.tsx  최상위 레이아웃 설정
+ㅣ   ㅏㅡ (tabs)  괄호 폴더는 '그룹'
+ㅣ          ㅏㅡ index.tsx  보통 첫 화면, 경로는 "/"
+ㅣ          ㅏㅡ exm.tsx  예시 소스, 경로는 /exm 이 됨
+ㅣ
+ㅣ
+ㅣㅡ api 사용할 api
+ㅣ
+ㅣ
+ㅣㅡ components 화면에서 사용하는 ui 모음
+...
+
+

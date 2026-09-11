@@ -12,7 +12,7 @@ load_dotenv(find_dotenv())
 #
 from graph import app
 from api import router
-from tasks import clean_expired_session
+from back.chat.tasks import clean_expired_session
 
 
 #루프 돌려짐

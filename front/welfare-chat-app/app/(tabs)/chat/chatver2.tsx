@@ -43,7 +43,9 @@ export default function ChatScreen() {
  
       ws.current.onmessage = (e) => {
       const data = JSON.parse(e.data);
+      console.log(JSON.stringify(data))
       if (data.recognized_text) setInputText(data.recognized_text);
+      console.log("변환된 텍스트:", data.recognized_text);
       };
     };
 
