@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage
 
 
 from graph import app 
-from back.chat.tasks import session_timestamps
+from tasks import session_timestamps
 
 
 router = APIRouter()
