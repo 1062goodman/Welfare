@@ -2,9 +2,10 @@ import os
 from dotenv import load_dotenv
 import uuid
 from datetime import datetime
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile, File
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
+import openai
 
 
 from graph import app 
@@ -103,6 +104,7 @@ def add_wav_header(pcm_byte: bytes, sample_rate = 16000, channels=1, bits =16) -
     return buf.getvalue()
 
 
+client = openai.OpenAI()
 
 @router.websocket("/ws/chat/{session_id}")
 async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
@@ -154,10 +156,6 @@ async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
 
 
 #------------------------------------------------ 파일배치 미완
-import openai
-from fastapi import UploadFile, File
-
-client = openai.OpenAI()
 
 
 @router.post("/File")

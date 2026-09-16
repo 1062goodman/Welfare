@@ -58,8 +58,16 @@ def classify_intent_node(state: AgentState):
     messages = state["messages"]
     current_names = state.get("current_recommended_names", [])
 
+    if current_names:
+        current_names_str = "\n".join(
+            f"{i+1} . {name}" for i, name in enumerate(current_names)
+        )
+    else:
+        current_names_str = "없음"
+
+
     result = intent_chain.invoke({"messages": messages,
-                                  "current_recommendations":current_names})
+                                  "current_recommendations":current_names_str})
 
     policy_names = getattr(result, 'policy_names', [])
     search_keywords = getattr(result, 'search_keywords', [])
@@ -72,7 +80,7 @@ def classify_intent_node(state: AgentState):
 
     if len(target_policy) > 0:
         final_intent = "상세요구"
-    elif len(policy_names) > 0 or filled_slots_count >= 2:
+    elif len(policy_names) > 0 or filled_slots_count >= 1:
         final_intent = "검색가능"
     else:
         final_intent = "조건부족"
@@ -306,6 +314,7 @@ def generate_answer_node(state: AgentState):
     search_results = state.get("search_results", "검색 결과가 없습니다.")
 
     intent = state.get("intent", "")
+    notice = state.get("answer_notice", "")
     
     if intent == "상세요구":
         guide = "사용자가 선택한 정책의 [상세 정보]를 제공 중입니다. 정보를 누락하지 말고 상세하고 친절하게 정리해 주세요."
@@ -313,6 +322,8 @@ def generate_answer_node(state: AgentState):
         guide = "여러 정책의 [목록과 요약]을 제공 중입니다. 요약하여 소개한 뒤 '더 자세히 알고 싶은 정책이 있다면 번호나 이름을 말씀해 주세요'라고 유도하세요."
 
 
+    if notice:
+        guide = notice + " "  + guide
     formatted_prompt = ANSWER_SYSTEM_PROMPT.format(
         guide=guide, 
         search_results=search_results

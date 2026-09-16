@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 session_timestamps= {}
 
 TIMEOUT_DAYS= 5
-TIMEOUT_DURATION = timedelta(minutes=TIMEOUT_DAYS)
+TIMEOUT_DURATION = timedelta(minutes=TIMEOUT_DAYS) #테스트용으로 minutes 사용. 실제로는 days로 변경
 
 async def clean_expired_session(memmory_saver):
     now = datetime.now()
@@ -14,7 +14,7 @@ async def clean_expired_session(memmory_saver):
         if now -last_activate_time > TIMEOUT_DURATION:
                 expired_users.append(session_id)
 
-    for seesion_id in expired_users:
+    for session_id in expired_users:
         del session_timestamps[session_id]
 
         if session_id in memmory_saver.storage:

@@ -37,7 +37,7 @@ origins = [
     "http://localhost:8081",           # React Native(Metro) 로컬 테스트용
 ]
 
-# !!!!!!여기 추후 수정
+# !!!!!!여기 추후 수정 (근데 이건 웹 접근이라 그냥 다 금지시켜도 될듯?)
 server.add_middleware(
     CORSMiddleware,
     allow_origins=origins,  # 출처에서의 접근을 허락함
@@ -52,5 +52,5 @@ server.include_router(router)
     
 async def session_cleaner_task():
     while True:
-        clean_expired_session(app.memory)
+        await clean_expired_session(app.memory)
         await asyncio.sleep(60 * 60)
