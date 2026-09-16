@@ -104,7 +104,7 @@ def add_wav_header(pcm_byte: bytes, sample_rate = 16000, channels=1, bits =16) -
     return buf.getvalue()
 
 
-client = openai.OpenAI()
+client = openai.AsyncOpenAI()
 
 @router.websocket("/ws/chat/{session_id}")
 async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
@@ -131,7 +131,7 @@ async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
                         wav_bytes = add_wav_header(audio_bytes)
                         audio_file = ("audio.wav", io.BytesIO(wav_bytes), "audio/wav") #파일 만들기
 
-                        transcript = client.audio.transcriptions.create(
+                        transcript = await client.audio.transcriptions.create(
                             model = "whisper-1",
                             file = audio_file
                         )
@@ -159,9 +159,9 @@ async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
 
 
 @router.post("/File")
-async def transcribe_audio(audio_file: UploadFile = File(...)):
+async def transcribe_file(audio_file: UploadFile = File(...)):
     
-    transcript = client.audio.transcriptions.create(
+    transcript = await client.audio.transcriptions.create(
         model="whisper-1",
         file=(audio_file.filename, audio_file.file, audio_file.content_type)
     )
