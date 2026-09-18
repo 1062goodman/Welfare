@@ -135,13 +135,6 @@ export default function ChatScreen() {
     </View>
   );
   
-  //예시 질문. 나중에 수정
-  const SUGGESTED_QUERIES = [
-  '기초연금 신청 방법이 궁금해요',
-  '장애인 지원금 종류가 뭐가 있나요',
-  '청년 주거 지원 알려주세요',
-  '난방비 지원은 어떻게 받나요',
-  ];
 
 
   return (
@@ -164,20 +157,6 @@ export default function ChatScreen() {
         style={styles.chatList}
       />
 
-      {messages.length === 1 && (
-  <View style={styles.suggestionArea}>
-    {SUGGESTED_QUERIES.map((query, idx) => (
-      <TouchableOpacity
-        key={idx}
-        style={styles.suggestionChip}
-        onPress={() => {
-          setInputText(query);
-        }}>
-        <Text style={styles.suggestionText}>{query}</Text>
-      </TouchableOpacity>
-    ))}
-  </View>
-      )}
 
       {wsStatus === 'closed' && (
         <TouchableOpacity style={styles.reconnectButton} onPress={connectWebSocket}>
@@ -238,7 +217,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 16, fontWeight: 'bold', color: TEXT_DARK },
 
   chatList: { flex: 1, paddingHorizontal: 14 },
-  bubble: { maxWidth: '70%', padding: 12, borderRadius: 14, marginVertical: 5 },
+  bubble: { maxWidth: '90%', padding: 12, borderRadius: 14, marginVertical: 5 },
   myBubble: { alignSelf: 'flex-end', backgroundColor: ACCENT_ORANGE },
   botBubble: { alignSelf: 'flex-start', backgroundColor: BUBBLE_BOT },
   myText: { color: 'white', fontSize: 15 },

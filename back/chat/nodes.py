@@ -40,7 +40,7 @@ graph = Neo4jGraph()
 
 
 # --------------------------------------------------------- 
-# 의도 분류
+# 의도 분류 라우팅
 
 # 의도 분류 시스템 프롬프트 
 
@@ -100,7 +100,9 @@ def classify_intent_node(state: AgentState):
         "life_cycle": result.life_cycle,
         "target_group": result.target_group,
         "theme": result.theme,
-        "target_policy": result.target_policy
+        "target_policy": result.target_policy,
+        "answer_notice": "",      
+        "narrow_target_slot": ""
     }
 
 # --------------------------------------------
@@ -128,6 +130,81 @@ def pre_summarize_node(state: AgentState):
     return {"current_query": latest_user_message}
 
 
+#---------------------------------------
+#검색양이 많은가?(검색 가능한가?)
+
+THRESHOLD = 10
+
+SLOT_RELATIONS = {
+    "life_cycle": ("TARGETS_AGE", "LifeCycle"),
+    "target_group": ("TARGETS_GROUP", "TargetGroup"),
+    "theme": ("RELATES_TO", "Theme"),
+}
+
+
+def check_specificity_node(state: AgentState):
+    print("검색 갯수 확인")
+
+    life_cycle = state.get("life_cycle", [])
+    target_group = state.get("target_group", [])
+    theme = state.get("theme", [])
+
+    filled = {
+        "life_cycle": life_cycle,
+        "target_group": target_group,
+        "theme": theme,
+    }
+
+    graph_filters = ""
+    if life_cycle:
+        graph_filters += "MATCH (p)-[:TARGETS_AGE]->(l:LifeCycle) WHERE l.name IN $life_cycle\n"
+    if target_group:
+        graph_filters += "MATCH (p)-[:TARGETS_GROUP]->(t:TargetGroup) WHERE t.name IN $target_group\n"
+    if theme:
+        graph_filters += "MATCH (p)-[:RELATES_TO]->(th:Theme) WHERE th.name IN $theme\n"
+
+    params = {"life_cycle": life_cycle, "target_group": target_group, "theme": theme}
+
+    count_query = f"""
+    MATCH (p:Policy)
+    {graph_filters}
+    RETURN count(DISTINCT p) AS cnt
+    """
+    result = graph.query(count_query, params=params)
+    cnt = result[0]["cnt"] if result else 0
+    print(f"현재 조건으로 {cnt}개 후보")
+
+    if cnt <= THRESHOLD:
+        return {"is_narrow": True, "narrow_target_slot": "", "answer_notice": ""}
+
+    unfilled = {slot for slot, val in filled.items() if not val}
+
+    if not unfilled:
+        # 다 채웠는데도 많음 -> 더 물어볼 게 없으니 그냥 진행
+        notice = f"조건에 맞는 정책이 {cnt}개로 많아, 대표적인 정책 위주로 안내합니다. 더 좁혀서 찾고 싶다면 구체적인 상황을 추가로 말씀해달라고 안내하세요."
+        return {"is_narrow": True, "narrow_target_slot": "", "answer_notice": notice}
+
+    best_slot = None
+    best_worst_case = None
+
+    for slot in unfilled:
+        rel, label = SLOT_RELATIONS[slot]
+        dist_query = f"""
+        MATCH (p:Policy)
+        {graph_filters}
+        MATCH (p)-[:{rel}]->(x:{label})
+        RETURN x.name AS name, count(DISTINCT p) AS cnt
+        ORDER BY cnt DESC
+        LIMIT 1
+        """
+        dist_result = graph.query(dist_query, params=params)
+        worst_case = dist_result[0]["cnt"] if dist_result else cnt  # 정보 없으면 최악으로 취급
+
+        if best_worst_case is None or worst_case < best_worst_case:
+            best_worst_case = worst_case
+            best_slot = slot
+
+    return {"is_narrow": False, "narrow_target_slot": best_slot or "", "answer_notice": ""}
 
 
 # --------------------------------------------
@@ -373,12 +450,22 @@ def block_attack_node(state: AgentState):
 # --------------------------------------------------------- 
 # 슬롯필링
 
+SLOT_LABELS = {
+    "life_cycle": "생애주기(예: 청년, 노년 등)",
+    "target_group": "가구 상황(예: 저소득, 장애인, 한부모 등)",
+    "theme": "관심 주제(예: 주거, 일자리, 육아 등)",
+}
+
 def ask_for_details_node(state: AgentState):
     print("부족한 조건 묻기")
-    
+
+    target_slot = state.get("narrow_target_slot", "")
+    addendum = ""
+    if target_slot and target_slot in SLOT_LABELS:
+        addendum = f"\n\n특히 다음 정보를 우선적으로 물어보세요: {SLOT_LABELS[target_slot]}"        
     
     prompt = ChatPromptTemplate.from_messages([
-        ("system", ASK_DETAILS_PROMPT),
+        ("system", ASK_DETAILS_PROMPT + addendum),
         MessagesPlaceholder(variable_name="messages")
     ])
     

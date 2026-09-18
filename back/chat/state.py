@@ -57,6 +57,10 @@ class AgentState(TypedDict):
     target_group: List[str]
     theme: List[str]
 
+    is_narrow: bool # 조건이 좁혀졌는가?
+    narrow_target_slot: str       # 다음에 물어보면 가장 효율적인 슬롯 ("life_cycle"/"target_group"/"theme")
+    answer_notice: str  
+
     #검색 누적 보관함
     search_results: str # Neo4j DB에서 검색해 온 최종 정책 데이터 
     recommended_ids: Annotated[List[str], operator.add]   #찾아온 정책 기억

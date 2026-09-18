@@ -10,10 +10,11 @@ from nodes import (
     execute_search_node,
     execute_detail_search_node,
     generate_answer_node,
-    block_attack_node)
+    block_attack_node,
+    check_specificity_node)
 
 # ---------------------------------------------------------
-# 라우팅
+# 의도 라우팅
 
 def route_by_intent(state: AgentState) -> str:
     """판별된 의도(intent)에 따라 이동할 다음 노드의 이름을 반환합니다."""
@@ -24,7 +25,9 @@ def route_by_intent(state: AgentState) -> str:
     elif intent == "조건부족":
         return "ask_for_details"
     elif intent == "검색가능":
-        return "execute_search"
+        if state.get("policy_names"):
+             return "execute_search"
+        return "check_specificity"
     elif intent == "상세요구":
         return "execute_detail_search"
     elif intent == "프롬프트공격":
@@ -32,6 +35,15 @@ def route_by_intent(state: AgentState) -> str:
     
     # 기본값 일상 대화
     return "general_chat"
+
+
+# 검색 라우팅 함수
+
+def route_by_specificity(state: AgentState) -> str:
+    if state.get("is_narrow"):
+        return "execute_search"
+    return "ask_for_details"
+
 
 # ---------------------------------------------------------
 # 랭그래프
@@ -41,6 +53,7 @@ workflow = StateGraph(AgentState)
 # 노드 등록
 workflow.add_node("pre_summarize", pre_summarize_node)
 workflow.add_node("classify_intent", classify_intent_node)
+workflow.add_node("check_specificity", check_specificity_node)
 workflow.add_node("general_chat", general_chat_node)
 workflow.add_node("ask_for_details", ask_for_details_node)
 workflow.add_node("execute_search", execute_search_node)
@@ -56,6 +69,11 @@ workflow.add_edge(START, "pre_summarize")
 workflow.add_conditional_edges(
     "classify_intent",
     route_by_intent
+)
+
+workflow.add_conditional_edges(
+    "check_specificity",
+    route_by_specificity
 )
 
 # 일반 엣지 (쿼리 요약->의도분석)
