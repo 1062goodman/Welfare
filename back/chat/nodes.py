@@ -392,12 +392,15 @@ def generate_answer_node(state: AgentState):
 
     intent = state.get("intent", "")
     notice = state.get("answer_notice", "")
-    
-    if intent == "상세요구":
+
+    if "찾지 못했습니다" in search_results:
+            guide = "요청하신 정책이 데이터베이스에서 확인되지 않습니다. 해당하는 정책이 없다는 사실을 명확하고 정중하게 전달하고, 정책명을 다시 확인해달라고 안내하세요. 조건을 더 물어보지 마세요."
+    elif intent == "상세요구":
         guide = "사용자가 선택한 정책의 [상세 정보]를 제공 중입니다. 정보를 누락하지 말고 상세하고 친절하게 정리해 주세요."
     else:
         guide = "여러 정책의 [목록과 요약]을 제공 중입니다. 요약하여 소개한 뒤 '더 자세히 알고 싶은 정책이 있다면 번호나 이름을 말씀해 주세요'라고 유도하세요."
 
+    
 
     if notice:
         guide = notice + " "  + guide
