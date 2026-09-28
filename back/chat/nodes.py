@@ -78,7 +78,10 @@ def classify_intent_node(state: AgentState):
 
     filled_slots_count = sum(1 for slot in [life_cycle, target_group, theme] if len(slot) > 0)
 
-    if len(target_policy) > 0:
+
+    if result.intent in ("일상대화", "프롬프트공격"):  
+        final_intent = result.intent
+    elif len(target_policy) > 0:                      
         final_intent = "상세요구"
     elif len(policy_names) > 0 or filled_slots_count >= 1:
         final_intent = "검색가능"
@@ -91,13 +94,15 @@ def classify_intent_node(state: AgentState):
     print(f"추출된 키워드: {search_keywords}")
     print(f"추출된 조건: 생애({life_cycle}), 가구({target_group}), 주제({theme})")
     print("\n\n")
-    
+
+
+    life_cycle = ["임신 · 출산" if x == "임신·출산" else x for x in result.life_cycle]
     
     return {
         "intent": final_intent,
         "search_keywords": search_keywords,
         "policy_names": result.policy_names,
-        "life_cycle": result.life_cycle,
+        "life_cycle": life_cycle,
         "target_group": result.target_group,
         "theme": result.theme,
         "target_policy": result.target_policy,
@@ -181,7 +186,7 @@ def check_specificity_node(state: AgentState):
 
     if not unfilled:
         # 다 채웠는데도 많음 -> 더 물어볼 게 없으니 그냥 진행
-        notice = f"조건에 맞는 정책이 {cnt}개로 많아, 대표적인 정책 위주로 안내합니다. 더 좁혀서 찾고 싶다면 구체적인 상황을 추가로 말씀해달라고 안내하세요."
+        notice = f"조건에 맞는 정책이 {cnt}개로 많아, 대표적인 정책 위주로 안내합니다."
         return {"is_narrow": True, "narrow_target_slot": "", "answer_notice": notice}
 
     best_slot = None
@@ -204,7 +209,10 @@ def check_specificity_node(state: AgentState):
             best_worst_case = worst_case
             best_slot = slot
 
-    return {"is_narrow": False, "narrow_target_slot": best_slot or "", "answer_notice": ""}
+        notice = (f"조건에 맞는 정책이 {cnt}개로 많아 상위 결과만 안내합니다. "
+        f"답변 끝에 '{SLOT_LABELS[best_slot]}를 알려주시면 더 좁혀드릴 수 있어요'라고 덧붙이세요.")
+
+    return {"is_narrow": True, "narrow_target_slot": best_slot or "", "answer_notice": notice}
 
 
 # --------------------------------------------
@@ -473,4 +481,4 @@ def ask_for_details_node(state: AgentState):
     ])
     
     response = (prompt | chat_llm).invoke({"messages": state["messages"]})
-    return {"messages": [response]}
+    return {"messages": [response], "ask_count": state.get("ask_count", 0) + 1}

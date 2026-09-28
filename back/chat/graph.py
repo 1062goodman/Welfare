@@ -23,6 +23,8 @@ def route_by_intent(state: AgentState) -> str:
     if intent == "일상대화":
         return "general_chat"
     elif intent == "조건부족":
+        if state.get("ask_count", 0) >= 1 :
+            return "execute_search"
         return "ask_for_details"
     elif intent == "검색가능":
         if state.get("policy_names"):

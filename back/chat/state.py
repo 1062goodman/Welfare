@@ -68,6 +68,7 @@ class AgentState(TypedDict):
     target_group: List[str]
     theme: List[str]
 
+    ask_count: int
     is_narrow: bool # 조건이 좁혀졌는가?
     narrow_target_slot: str       # 다음에 물어보면 가장 효율적인 슬롯 ("life_cycle"/"target_group"/"theme")
     answer_notice: str  
