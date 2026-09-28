@@ -66,8 +66,18 @@ def classify_intent_node(state: AgentState):
         current_names_str = "없음"
 
 
-    result = intent_chain.invoke({"messages": messages,
-                                  "current_recommendations":current_names_str})
+    result = None
+    for _ in range(2):
+        try:
+            result = intent_chain.invoke({"messages": messages,
+                                          "current_recommendations": current_names_str})
+        except Exception as e:
+            print(f"의도 분류 호출 실패: {e}")
+        if result is not None:
+            break
+    if result is None:   # 두 번 다 실패하면 기본값
+        result = IntentClassification(intent="조건부족", reasoning="구조화 출력 실패, 기본값 적용")
+
 
     policy_names = getattr(result, 'policy_names', [])
     search_keywords = getattr(result, 'search_keywords', [])
@@ -75,6 +85,11 @@ def classify_intent_node(state: AgentState):
     target_group = getattr(result, 'target_group', [])
     theme = getattr(result, 'theme', [])
     target_policy = getattr(result, 'target_policy', [])
+
+    if target_policy and not current_names:
+        policy_names = policy_names + [t for t in target_policy if not t.isdigit()]
+        target_policy = []
+
 
     filled_slots_count = sum(1 for slot in [life_cycle, target_group, theme] if len(slot) > 0)
 
@@ -101,9 +116,9 @@ def classify_intent_node(state: AgentState):
     return {
         "intent": final_intent,
         "search_keywords": search_keywords,
-        "policy_names": result.policy_names,
+        "policy_names": policy_names,
         "life_cycle": life_cycle,
-        "target_group": result.target_group,
+        "target_group": target_group,
         "theme": result.theme,
         "target_policy": result.target_policy,
         "answer_notice": "",      
@@ -209,8 +224,8 @@ def check_specificity_node(state: AgentState):
             best_worst_case = worst_case
             best_slot = slot
 
-        notice = (f"조건에 맞는 정책이 {cnt}개로 많아 상위 결과만 안내합니다. "
-        f"답변 끝에 '{SLOT_LABELS[best_slot]}를 알려주시면 더 좁혀드릴 수 있어요'라고 덧붙이세요.")
+    notice = (f"조건에 맞는 정책이 {cnt}개로 많아 상위 결과만 안내합니다. "
+    f"답변 끝에 '{SLOT_LABELS[best_slot]}를 알려주시면 더 좁혀드릴 수 있어요'라고 덧붙이세요.")
 
     return {"is_narrow": True, "narrow_target_slot": best_slot or "", "answer_notice": notice}
 
@@ -248,17 +263,15 @@ def execute_search_node(state: AgentState):
 
     # full-text 검색
     search_terms = list(set(policy_names + search_keywords))
-    if search_terms:
-        print(f"Full-Text 검색 시도 ({search_terms})")
-        ft_query_string = " AND ".join(search_terms) # 키워드들을 모두 포함하는 엄격한 검색
-        params["ft_query"] = ft_query_string
-       
-        cypher_ft = f"""
+    name_not_found = False
+    if policy_names:    # 정책명이 있을 때만, 정책명끼리 OR, 태그 필터 없이
+        names = [n.replace('"', '').strip() for n in policy_names if n.strip()]
+        params["ft_query"] = " OR ".join(f'"{n}"' for n in names)
+        cypher_ft = """
         CALL db.index.fulltext.queryNodes('policy_name_index', $ft_query) YIELD node AS p, score AS ft_score
-        {graph_filters}
         OPTIONAL MATCH (p)-[:MANAGED_BY]->(d:Department)
         OPTIONAL MATCH (p)-[:PROVIDES]->(s:SupportType)
-        RETURN p.servId AS id, p.servNm AS title, p.servDgst AS digest, 
+        RETURN p.servId AS id, p.servNm AS title, p.servDgst AS digest,
                d.name AS department, s.name AS support_type, ft_score AS score
         LIMIT 3
         """
@@ -268,6 +281,7 @@ def execute_search_node(state: AgentState):
         except Exception as e:
             print(f"Full-Text 검색 중 예외 발생 (무시하고 벡터로 전환): {e}")
             records = []
+        name_not_found = not records
         
         
 
@@ -316,8 +330,11 @@ def execute_search_node(state: AgentState):
         
         print(f"{len(records)}개 정책 검색: {rec_names}")
     
-
-   
+    extra = {}
+    if name_not_found and records:
+        extra["answer_notice"] = ("사용자가 언급한 정책명이 데이터베이스에서 확인되지 않았습니다. "
+                                  "이 사실을 먼저 알리고, 아래 정책은 유사한 다른 정책임을 밝혀 안내하세요.")
+    
     return {
         "search_results": formatted_results,
         "recommended_ids": rec_ids,       
@@ -401,9 +418,15 @@ def generate_answer_node(state: AgentState):
     intent = state.get("intent", "")
     notice = state.get("answer_notice", "")
 
-    if "찾지 못했습니다" in search_results:
-            guide = "요청하신 정책이 데이터베이스에서 확인되지 않습니다. 해당하는 정책이 없다는 사실을 명확하고 정중하게 전달하고, 정책명을 다시 확인해달라고 안내하세요. 조건을 더 물어보지 마세요."
-    elif intent == "상세요구":
+    if search_results.startswith("조건에 맞는 복지 정책을 찾지 못했습니다"):
+        msg = ("요청하신 정책을 데이터베이스에서 찾지 못했습니다. 정책명을 다시 확인해 주세요."
+               if state.get("policy_names")
+               else "조건에 맞는 정책을 찾지 못했습니다. 상황을 조금 다르게 말씀해 주시면 다시 찾아볼게요.")
+        return {"messages": [AIMessage(content=msg)]}
+    if search_results.startswith(("이전에 추천해", "해당 정책의 상세 정보")):
+        return {"messages": [AIMessage(content=search_results)]}
+    
+    if intent == "상세요구":
         guide = "사용자가 선택한 정책의 [상세 정보]를 제공 중입니다. 정보를 누락하지 말고 상세하고 친절하게 정리해 주세요."
     else:
         guide = "여러 정책의 [목록과 요약]을 제공 중입니다. 요약하여 소개한 뒤 '더 자세히 알고 싶은 정책이 있다면 번호나 이름을 말씀해 주세요'라고 유도하세요."

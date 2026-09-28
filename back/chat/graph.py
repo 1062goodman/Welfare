@@ -72,18 +72,19 @@ workflow.add_conditional_edges(
     "classify_intent",
     route_by_intent
 )
-
+""" 삭제
 workflow.add_conditional_edges(
     "check_specificity",
     route_by_specificity
 )
-
+"""
 # 일반 엣지 (쿼리 요약->의도분석)
 workflow.add_edge("pre_summarize", "classify_intent")
 
 # 일반 엣지 (검색 ->답변 생성)
 workflow.add_edge("execute_search", "generate_answer")
 workflow.add_edge("execute_detail_search", "generate_answer")
+workflow.add_edge("check_specificity", "execute_search")
 
 # 종료점 (답변이 출력되는 노드들은 끝나면 시스템 대기 상태로)
 workflow.add_edge("general_chat", END)

@@ -10,7 +10,7 @@ import asyncio
 load_dotenv(find_dotenv())
 
 #
-from graph import app
+from graph import app, memory
 from api import router
 from tasks import clean_expired_session
 
