@@ -72,12 +72,7 @@ workflow.add_conditional_edges(
     "classify_intent",
     route_by_intent
 )
-""" 삭제
-workflow.add_conditional_edges(
-    "check_specificity",
-    route_by_specificity
-)
-"""
+
 # 일반 엣지 (쿼리 요약->의도분석)
 workflow.add_edge("pre_summarize", "classify_intent")
 

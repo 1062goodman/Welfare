@@ -21,14 +21,14 @@ load_dotenv(find_dotenv())
 api_key=os.getenv('UPSTAGE_API_KEY')
 
 #선요약
-summarize_llm = ChatUpstage(model="solar-mini")
+summarize_llm = ChatUpstage(model="solar-mini",timeout=60, max_retries=1)
 
 #의도분류
-llm = ChatUpstage(model="solar-pro")
+llm = ChatUpstage(model="solar-pro", timeout=60, max_retries=1)
 structured_llm = llm.with_structured_output(IntentClassification)
 
 #대화
-chat_llm = ChatUpstage(model="solar-pro")
+chat_llm = ChatUpstage(model="solar-pro",timeout=60, max_retries=1)
 
 #임베딩 모델
 query_emb_model = UpstageEmbeddings(
@@ -120,7 +120,7 @@ def classify_intent_node(state: AgentState):
         "life_cycle": life_cycle,
         "target_group": target_group,
         "theme": result.theme,
-        "target_policy": result.target_policy,
+        "target_policy": target_policy,
         "answer_notice": "",      
         "narrow_target_slot": ""
     }
@@ -251,6 +251,8 @@ def execute_search_node(state: AgentState):
         graph_filters += "MATCH (p)-[:TARGETS_GROUP]->(t:TargetGroup) WHERE t.name IN $target_group\n"
     if theme:
         graph_filters += "MATCH (p)-[:RELATES_TO]->(th:Theme) WHERE th.name IN $theme\n"
+    if policy_names:
+        graph_filters = ""
 
     params = {
         "life_cycle": life_cycle,
