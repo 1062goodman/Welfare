@@ -78,13 +78,22 @@ def classify_intent_node(state: AgentState):
     if result is None:   # 두 번 다 실패하면 기본값
         result = IntentClassification(intent="조건부족", reasoning="구조화 출력 실패, 기본값 적용")
 
+    def merge_condition(prev, add, remove):
+            return list(set(prev) | set(add) - set(remove))
 
-    policy_names = getattr(result, 'policy_names', [])
+
+    target_group = merge_condition(state.get("target_group", []), result.target_group_add, result.target_group_remove)
+    theme = merge_condition(state.get("theme", []), result.theme_add, result.theme_remove)
+
+    life_cycle_value = result.life_cycle
+    if life_cycle_value == "임신·출산":
+        life_cycle_value = "임신 · 출산"
+
+    life_cycle = [life_cycle_value] if life_cycle_value is not None else state.get("life_cycle", [])
+
+    policy_names = getattr(result, 'policy_names', [])    
     search_keywords = getattr(result, 'search_keywords', [])
-    life_cycle = getattr(result, 'life_cycle', [])
-    target_group = getattr(result, 'target_group', [])
-    theme = getattr(result, 'theme', [])
-    target_policy = getattr(result, 'target_policy', [])
+    
 
     if target_policy and not current_names:
         policy_names = policy_names + [t for t in target_policy if not t.isdigit()]
@@ -110,8 +119,6 @@ def classify_intent_node(state: AgentState):
     print(f"추출된 조건: 생애({life_cycle}), 가구({target_group}), 주제({theme})")
     print("\n\n")
 
-
-    life_cycle = ["임신 · 출산" if x == "임신·출산" else x for x in result.life_cycle]
     
     return {
         "intent": final_intent,
@@ -119,7 +126,7 @@ def classify_intent_node(state: AgentState):
         "policy_names": policy_names,
         "life_cycle": life_cycle,
         "target_group": target_group,
-        "theme": result.theme,
+        "theme": theme,
         "target_policy": target_policy,
         "answer_notice": "",      
         "narrow_target_slot": ""

@@ -1,6 +1,6 @@
 import operator
 from pydantic import BaseModel, Field
-from typing import TypedDict, List, Annotated, Literal, Dict, Any
+from typing import TypedDict, List, Annotated, Literal, Optional
 from langchain_core.messages import BaseMessage
 
 
@@ -33,20 +33,19 @@ class IntentClassification(BaseModel):
 """
     )
     #생애주기
-    life_cycle: List[Literal["임신·출산", "영유아", "아동", "청소년", "청년", "중장년", "노년"]] = Field(
-        default_factory=list,
-        description="질문에서 파악된 생애주기 조건. 사용자가 특정 연령이나 생애주기를 명시하지 않았다면 절대로 유추하지 말고 반드시 빈 리스트 [] 를 반환할 것."
-    )
+    life_cycle: Optional[Literal["임신·출산", "영유아", "아동", "청소년", "청년", "중장년", "노년"]] = Field(
+    default=None,
+    description="이번 발화에서 파악된 화자 본인의 생애주기. 언급 없으면 None(이전 값 유지), "
+                "새로 언급되면 그 값으로 교체(이전 값 무효)."
+)
+
+    
     #상황
-    target_group: List[Literal["저소득", "장애인", "한부모·조손", "다자녀", "다문화·탈북민", "보훈대상자"]] = Field(
-        default_factory=list,
-        description="질문에서 파악된 가구상황 조건"
-    )
+    target_group_add: List[Literal["저소득", "장애인", "한부모·조손", "다자녀", "다문화·탈북민", "보훈대상자"]] = Field(default_factory=list)
+    target_group_remove: List[Literal["저소득", "장애인", "한부모·조손", "다자녀", "다문화·탈북민", "보훈대상자"]] = Field(default_factory=list)
     #주제
-    theme: List[Literal["신체건강", "정신건강", "생활지원", "주거", "일자리", "문화·여가", "안전·위기", "임신·출산", "보육", "교육", "입양·위탁", "보호·돌봄", "서민금융", "법률", "에너지"]] = Field(
-        default_factory=list,
-        description="질문에서 파악된 주제 조건"
-    )
+    theme_add: List[Literal["신체건강", "정신건강", "생활지원", "주거", "일자리", "문화·여가", "안전·위기", "임신·출산", "보육", "교육", "입양·위탁", "보호·돌봄", "서민금융", "법률", "에너지"]] = Field(default_factory=list)
+    theme_remove: List[Literal["신체건강", "정신건강", "생활지원", "주거", "일자리", "문화·여가", "안전·위기", "임신·출산", "보육", "교육", "입양·위탁", "보호·돌봄", "서민금융", "법률", "에너지"]] = Field(default_factory=list)
     #상세요구 타겟정책
     target_policy: List[str] = Field(
         default_factory=list,
