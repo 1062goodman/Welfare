@@ -52,5 +52,5 @@ server.include_router(router)
     
 async def session_cleaner_task():
     while True:
-        await clean_expired_session(app.memory)
+        await clean_expired_session(memory)
         await asyncio.sleep(60 * 60)

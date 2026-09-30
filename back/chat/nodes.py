@@ -285,8 +285,20 @@ def execute_search_node(state: AgentState):
             records = []
         name_not_found = not records
         
-        
+    chunks_by_id = {}
 
+    if records:   # 정책명이 정확히 매칭됐을 때만 상세 원문 가져오기
+        ids = [r['id'] for r in records]
+        chunk_rows = graph.query("""
+            MATCH (p:Policy) WHERE p.servId IN $ids
+            MATCH (p)-[:HAS_INFO]->(c:Chunk)
+            RETURN p.servId AS id, c.type AS type, c.content AS content
+        """, params={"ids": ids})
+        for row in chunk_rows:
+            chunks_by_id.setdefault(row['id'], []).append(f"■ {row['type']}\n{row['content']}")
+
+
+    
     if not records:
         print("벡터 검색 시도")
         combined_query = f"{latest_message} " + " ".join(search_terms + life_cycle + target_group + theme)
@@ -320,11 +332,16 @@ def execute_search_node(state: AgentState):
         for i, record in enumerate(records):
             rec_ids.append(record['id'])
             rec_names.append(record['title'])
+
+            detail = chunks_by_id.get(record['id'])
+            body = "\n\n".join(detail) if detail else f"- 요약: {record['digest']}"
+
             text = (
                 f"[{i+1}순위] 정책명: {record['title']} (Score: {record['score']:.4f})\n"
                 f"- 담당부처: {record.get('department', '정보없음')}\n"
                 f"- 제공유형: {record.get('support_type', '정보없음')}\n"
-                f"- 요약: {record['digest']}\n")+ f"{'-' * 30}"
+                f"{body}\n{'-' * 30}"
+            )
             
             result_texts.append(text)
             
@@ -336,6 +353,7 @@ def execute_search_node(state: AgentState):
     if name_not_found and records:
         extra["answer_notice"] = ("사용자가 언급한 정책명이 데이터베이스에서 확인되지 않았습니다. "
                                   "이 사실을 먼저 알리고, 아래 정책은 유사한 다른 정책임을 밝혀 안내하세요.")
+
     
     return {
         "search_results": formatted_results,
