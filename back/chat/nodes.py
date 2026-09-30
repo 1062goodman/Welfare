@@ -33,7 +33,8 @@ chat_llm = ChatUpstage(model="solar-pro",timeout=60, max_retries=1)
 #임베딩 모델
 query_emb_model = UpstageEmbeddings(
     api_key=api_key,
-    model="solar-embedding-1-large-query"
+    model="solar-embedding-1-large-query",
+    timeout=60
 )
 #db연결
 graph = Neo4jGraph()
@@ -103,6 +104,7 @@ def classify_intent_node(state: AgentState):
 
     policy_names = getattr(result, 'policy_names', [])    
     search_keywords = getattr(result, 'search_keywords', [])
+    target_policy = getattr(result, 'target_policy', [])
     
 
     if target_policy and not current_names:
@@ -378,7 +380,8 @@ def execute_search_node(state: AgentState):
         "recommended_names": rec_names,
         "current_recommended_ids": rec_ids,
         "current_recommended_names": rec_names,
-        "recommendation_history": [rec_names]
+        "recommendation_history": [rec_names],
+        **extra,
     }
 
 
