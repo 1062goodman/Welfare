@@ -77,8 +77,17 @@ class AgentState(TypedDict):
     recommended_ids: Annotated[List[str], operator.add]   #찾아온 정책 기억
     recommended_names: Annotated[List[str], operator.add]
 
-    target_policy: List[str]
+    target_policy: List[str] = Field(
+    default_factory=list,
+    description="""의도가 '상세요구'일 경우, 사용자가 지목한 정책의 이름이나 번호를 추출할 것.
+사용자가 방금 보여준 목록(직전 턴)에서 번호로 지목하면, 순수 숫자 문자열만 추출하세요 (예: '1번' → '1').
+사용자가 '처음', '아까', '이전에' 등 과거 시점의 목록을 가리키면, [지금까지의 검색 이력]을 참고하여 
+해당하는 정책명을 그대로 추출하세요 (숫자 아님).
+(예: ['1', '2', '국민연금', '5', '청년퇴직금지원'])"""
+)
     current_recommended_ids: List[str]
     current_recommended_names: List[str]
+
+    recommendation_history: Annotated[List[List[str]], operator.add]
 
 

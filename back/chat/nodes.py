@@ -58,6 +58,15 @@ def classify_intent_node(state: AgentState):
     messages = state["messages"]
     current_names = state.get("current_recommended_names", [])
 
+    history = state.get("recommendation_history", [])
+    history_str = ""
+    for turn_idx, names in enumerate(history):
+        history_str += f"[{turn_idx+1}번째 검색 결과]\n"
+        for i, name in enumerate(names):
+         history_str += f"  {i+1}. {name}\n"
+    if not history_str:
+        history_str = "없음"
+
     if current_names:
         current_names_str = "\n".join(
             f"{i+1} . {name}" for i, name in enumerate(current_names)
@@ -70,7 +79,8 @@ def classify_intent_node(state: AgentState):
     for _ in range(2):
         try:
             result = intent_chain.invoke({"messages": messages,
-                                          "current_recommendations": current_names_str})
+                                          "current_recommendations": current_names_str,
+                                          "search_history": history_str})
         except Exception as e:
             print(f"의도 분류 호출 실패: {e}")
         if result is not None:
@@ -367,7 +377,8 @@ def execute_search_node(state: AgentState):
         "recommended_ids": rec_ids,       
         "recommended_names": rec_names,
         "current_recommended_ids": rec_ids,
-        "current_recommended_names": rec_names 
+        "current_recommended_names": rec_names,
+        "recommendation_history": [rec_names]
     }
 
 
