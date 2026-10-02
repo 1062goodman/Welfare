@@ -323,11 +323,9 @@ def execute_search_node(state: AgentState):
         print("벡터 검색 시도")
         if policy_names:
             graph_filters = ""  # 정책을 특정하려던 시도였다면 조건 필터 제거
-            query_embedding = query_emb_model.embed_query(latest_message)  # 오염 안 된 원문만
-        else:
-            combined_query = f"{latest_message} " + " ".join(search_terms + life_cycle + target_group + theme)
-            query_embedding = query_emb_model.embed_query(combined_query)
-
+       
+        query_embedding = query_emb_model.embed_query(latest_message)  
+            
         params["query_embedding"] = query_embedding
         
         cypher_vec = f"""
