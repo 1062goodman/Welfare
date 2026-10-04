@@ -62,10 +62,10 @@ def graphrag_search_node(state: AgentState):
 
     search_terms = list(set(result.policy_names + result.search_keywords))
     if search_terms:
-        params["ft_query"] = " AND ".join(search_terms)
-        cypher_ft = f"""
+        names = [n.replace('"', '').strip() for n in search_terms if n.strip()]
+        params["ft_query"] = " OR ".join(f'"{n}"' for n in names)
+        cypher_ft = """
         CALL db.index.fulltext.queryNodes('policy_name_index', $ft_query) YIELD node AS p, score AS ft_score
-        {graph_filters}
         OPTIONAL MATCH (p)-[:MANAGED_BY]->(d:Department)
         RETURN p.servNm AS title, p.servDgst AS digest, d.name AS department, ft_score AS score
         LIMIT 3
