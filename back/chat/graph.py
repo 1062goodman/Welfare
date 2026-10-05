@@ -5,6 +5,7 @@ from state import AgentState
 from nodes import (
     pre_summarize_node, 
     classify_intent_node,
+    extract_conditions_node,
     general_chat_node,
     ask_for_details_node,
     execute_search_node,
@@ -22,29 +23,25 @@ def route_by_intent(state: AgentState) -> str:
     
     if intent == "일상대화":
         return "general_chat"
-    elif intent == "조건부족":
-        if state.get("ask_count", 0) >= 1 :
-            return "execute_search"
-        return "ask_for_details"
-    elif intent == "검색가능":
-        if state.get("policy_names"):
-             return "execute_search"
-        return "check_specificity"
     elif intent == "상세요구":
         return "execute_detail_search"
     elif intent == "프롬프트공격":
             return "block_attack"
+    return "extract_conditions"
     
-    # 기본값 일상 대화
-    return "general_chat"
 
 
 # 검색 라우팅 함수
 
-def route_by_specificity(state: AgentState) -> str:
-    if state.get("is_narrow"):
+def route_by_extraction(state: AgentState) -> str:
+    """B: 기존 route_by_intent의 조건부족/검색가능 분기를 그대로 옮김"""
+    if state.get("intent") == "조건부족":
+        if state.get("ask_count", 0) >= 1:
+            return "execute_search"
+        return "ask_for_details"
+    if state.get("policy_names"):
         return "execute_search"
-    return "ask_for_details"
+    return "check_specificity"
 
 
 # ---------------------------------------------------------
@@ -57,6 +54,7 @@ workflow.add_node("pre_summarize", pre_summarize_node)
 workflow.add_node("classify_intent", classify_intent_node)
 workflow.add_node("check_specificity", check_specificity_node)
 workflow.add_node("general_chat", general_chat_node)
+workflow.add_node("extract_conditions", extract_conditions_node)
 workflow.add_node("ask_for_details", ask_for_details_node)
 workflow.add_node("execute_search", execute_search_node)
 workflow.add_node("execute_detail_search", execute_detail_search_node)
@@ -72,6 +70,8 @@ workflow.add_conditional_edges(
     "classify_intent",
     route_by_intent
 )
+workflow.add_conditional_edges("extract_conditions", route_by_extraction)
+
 
 # 일반 엣지 (쿼리 요약->의도분석)
 workflow.add_edge("pre_summarize", "classify_intent")

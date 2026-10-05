@@ -6,10 +6,11 @@ from langchain_core.messages import AIMessage
 from langchain_upstage import ChatUpstage
 from langchain_upstage.embeddings import UpstageEmbeddings
 
-from state import AgentState, IntentClassification
+from state import AgentState, IntentClassification, ConditionExtraction
 from prompts import (
     INTENT_SYSTEM_PROMPT, 
     ANSWER_SYSTEM_PROMPT, 
+    EXTRACT_SYSTEM_PROMPT,
     GENERAL_CHAT_PROMPT, 
     ASK_DETAILS_PROMPT,
     SUMMERIZE_SYSTEM_PROMPT
@@ -53,6 +54,13 @@ intent_prompt = ChatPromptTemplate.from_messages([
 # 프롬프트와 LLM 체인 연결
 intent_chain = intent_prompt | structured_llm
 
+# 조건 추출 체인
+extract_prompt = ChatPromptTemplate.from_messages([
+    ("system", EXTRACT_SYSTEM_PROMPT),
+    ("placeholder", "{messages}")
+])
+extract_chain = extract_prompt | llm.with_structured_output(ConditionExtraction)
+
 
 def classify_intent_node(state: AgentState):
 
@@ -87,62 +95,33 @@ def classify_intent_node(state: AgentState):
         if result is not None:
             break
     if result is None:   # 두 번 다 실패하면 기본값
-        result = IntentClassification(intent="조건부족", reasoning="구조화 출력 실패, 기본값 적용")
+        result = IntentClassification(intent="복지검색", reasoning="구조화 출력 실패, 기본값 적용")
 
-    def merge_condition(prev, add, remove):
-            return list(set(prev) | set(add) - set(remove))
+    intent, targets = result.intent, result.target_policy
 
-
-    target_group = merge_condition(state.get("target_group", []), result.target_group_add, result.target_group_remove)
-    theme = merge_condition(state.get("theme", []), result.theme_add, result.theme_remove)
-
-    life_cycle_value = result.life_cycle
-    if life_cycle_value == "임신·출산":
-        life_cycle_value = "임신 · 출산"
-
-    life_cycle = [life_cycle_value] if life_cycle_value is not None else state.get("life_cycle", [])
-
-    policy_names = getattr(result, 'policy_names', [])    
-    search_keywords = getattr(result, 'search_keywords', [])
-    target_policy = getattr(result, 'target_policy', [])
-    
-
-    if target_policy and not current_names:
-        policy_names = policy_names + [t for t in target_policy if not t.isdigit()]
-        target_policy = []
-
-
-    filled_slots_count = sum(1 for slot in [life_cycle, target_group, theme] if len(slot) > 0)
-
-
-    if result.intent in ("일상대화", "프롬프트공격"):  
-        final_intent = result.intent
-    elif len(target_policy) > 0:                      
-        final_intent = "상세요구"
-    elif len(policy_names) > 0 or filled_slots_count >= 1:
-        final_intent = "검색가능"
+    if intent == "상세요구":
+        all_names = state.get("recommended_names", [])
+        def valid(t):
+            if t.isdigit():
+                return 0 < int(t) <= len(current_names)
+            return any(t in n or n in t for n in all_names)
+        targets = [t for t in targets if valid(t)]
+        if not targets:            # 목록에 없는 걸 가리켰으면 새 검색으로 강등
+            intent = "복지검색"
     else:
-        final_intent = "조건부족"
+        targets = []
 
-        
-    print(f"분석 결과: {final_intent} (이유: {result.reasoning})")
-    print(f"추출된 정책명: {policy_names}")
-    print(f"추출된 키워드: {search_keywords}")
-    print(f"추출된 조건: 생애({life_cycle}), 가구({target_group}), 주제({theme})")
+    print(f"분석 결과: {intent} (이유: {result.reasoning})")
+    print(f"상세요구 대상: {targets}")
     print("\n\n")
 
-    
     return {
-        "intent": final_intent,
-        "search_keywords": search_keywords,
-        "policy_names": policy_names,
-        "life_cycle": life_cycle,
-        "target_group": target_group,
-        "theme": theme,
-        "target_policy": target_policy,
-        "answer_notice": "",      
+        "intent": intent,
+        "target_policy": targets,
+        "answer_notice": "",       # 모든 경로에서 매 턴 초기화 (상세요구는 B를 안 거치므로 여기서 해야 함)
         "narrow_target_slot": ""
     }
+    
 
 # --------------------------------------------
 # 선요약
@@ -168,6 +147,53 @@ def pre_summarize_node(state: AgentState):
     #"current_query" 필드에 가장 최근의 메시지를 넣음. (요약된것이든 원문이든)
     return {"current_query": latest_user_message}
 
+
+
+#---------------------------------------조건 추출
+
+def extract_conditions_node(state: AgentState):
+    result = None
+    for _ in range(2):
+        try:
+            result = extract_chain.invoke({"messages": state["messages"]})
+        except Exception as e:
+            print(f"조건 추출 호출 실패: {e}")
+        if result is not None:
+            break
+    if result is None:
+        result = ConditionExtraction(reasoning="구조화 출력 실패, 기본값 적용")
+
+    def merge_condition(prev, add, remove):
+        return list((set(prev) | set(add)) - set(remove))   # 괄호 추가 (아래 버그 설명 참고)
+
+    target_group = merge_condition(state.get("target_group", []), result.target_group_add, result.target_group_remove)
+    theme = merge_condition(state.get("theme", []), result.theme_add, result.theme_remove)
+
+    life_cycle_value = result.life_cycle
+    if life_cycle_value == "임신·출산":
+        life_cycle_value = "임신 · 출산"
+    life_cycle = [life_cycle_value] if life_cycle_value is not None else state.get("life_cycle", [])
+
+    policy_names = result.policy_names
+    search_keywords = result.search_keywords
+    filled_slots_count = sum(1 for slot in [life_cycle, target_group, theme] if slot)
+
+    final_intent = "검색가능" if (policy_names or filled_slots_count >= 1) else "조건부족"
+
+    print(f"분석 결과: {final_intent} (이유: {result.reasoning})")
+    print(f"추출된 정책명: {policy_names}")
+    print(f"추출된 키워드: {search_keywords}")
+    print(f"추출된 조건: 생애({life_cycle}), 가구({target_group}), 주제({theme})")
+    print("\n\n")
+
+    return {
+        "intent": final_intent,
+        "search_keywords": search_keywords,
+        "policy_names": policy_names,
+        "life_cycle": life_cycle,
+        "target_group": target_group,
+        "theme": theme,
+    }
 
 #---------------------------------------
 #검색양이 많은가?(검색 가능한가?)
@@ -257,7 +283,6 @@ def execute_search_node(state: AgentState):
     # 마지막 쿼리, 조건 추출
     latest_message = state["current_query"]
     policy_names = state.get("policy_names", [])
-    search_keywords = state.get("search_keywords", [])
     life_cycle = state.get("life_cycle", [])
     target_group = state.get("target_group", [])
     theme = state.get("theme", [])
@@ -283,7 +308,7 @@ def execute_search_node(state: AgentState):
     records = []
 
     # full-text 검색
-    search_terms = list(set(policy_names + search_keywords))
+
     name_not_found = False
     if policy_names:    # 정책명이 있을 때만, 정책명끼리 OR, 태그 필터 없이
         names = [n.replace('"', '').strip() for n in policy_names if n.strip()]
@@ -448,8 +473,6 @@ def execute_detail_search_node(state: AgentState):
   
     return {"search_results": "\n\n".join(result_texts)}
 
-
-from langchain_core.messages import AIMessage
 
 
 # --------------------------------------------
