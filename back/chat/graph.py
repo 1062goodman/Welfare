@@ -12,7 +12,7 @@ from nodes import (
     execute_detail_search_node,
     generate_answer_node,
     block_attack_node,
-    check_specificity_node)
+    )
 
 # ---------------------------------------------------------
 # 의도 라우팅
@@ -34,14 +34,9 @@ def route_by_intent(state: AgentState) -> str:
 # 검색 라우팅 함수
 
 def route_by_extraction(state: AgentState) -> str:
-    """B: 기존 route_by_intent의 조건부족/검색가능 분기를 그대로 옮김"""
-    if state.get("intent") == "조건부족":
-        if state.get("ask_count", 0) >= 1:
-            return "execute_search"
-        return "ask_for_details"
-    if state.get("policy_names"):
-        return "execute_search"
-    return "check_specificity"
+    if state.get("intent") == "조건부족" and state.get("ask_count", 0) < 1:
+         return "ask_for_details"
+    return "execute_search"
 
 
 # ---------------------------------------------------------
@@ -52,7 +47,6 @@ workflow = StateGraph(AgentState)
 # 노드 등록
 workflow.add_node("pre_summarize", pre_summarize_node)
 workflow.add_node("classify_intent", classify_intent_node)
-workflow.add_node("check_specificity", check_specificity_node)
 workflow.add_node("general_chat", general_chat_node)
 workflow.add_node("extract_conditions", extract_conditions_node)
 workflow.add_node("ask_for_details", ask_for_details_node)
@@ -79,7 +73,6 @@ workflow.add_edge("pre_summarize", "classify_intent")
 # 일반 엣지 (검색 ->답변 생성)
 workflow.add_edge("execute_search", "generate_answer")
 workflow.add_edge("execute_detail_search", "generate_answer")
-workflow.add_edge("check_specificity", "execute_search")
 
 # 종료점 (답변이 출력되는 노드들은 끝나면 시스템 대기 상태로)
 workflow.add_edge("general_chat", END)

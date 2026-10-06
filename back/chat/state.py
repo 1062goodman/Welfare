@@ -32,39 +32,27 @@ class IntentClassification(BaseModel):
 class ConditionExtraction(BaseModel):
 
     reasoning: str = Field(
-            description="가장 먼저 작성. ① 사용자가 정책·제도 이름으로 보이는 표현을 말했는가(말했다면 원문 인용) "
-                        "② 조건을 채운다면 근거가 되는 발화 인용. 이 판단에 맞춰 아래 필드를 채울 것."
-        )
-    
-    search_keywords: List[str] = Field(
-        default_factory=list,
-        description="정책명이 아닌 일반 명사만 (예: ['연금', '생활비']). 정책명은 여기 넣지 말고 policy_names에 넣을 것. 없으면 빈 리스트."
+        description="가장 먼저 작성, 인용 위주로 간결하게. ① 이번 발화와 이전 대화에서 검색할 주제가 무엇인지 "
+                    "② 생애주기·가구상황·주제를 채운다면 근거가 되는 사용자의 발화 인용 (인용할 문장이 없으면 그 조건은 비울 것). "
+                    "이 판단에 맞춰 아래 필드를 채울 것."
     )
-    #유추 정책명
-    policy_names: List[str] = Field(
-        default_factory=list,
-        description="""사용자가 언급했거나 유추할 수 있는 복지 정책의 이름들을 추출하세요.
-    실제로 그런 정책이 존재하는지 여부는 판단하지 마세요 — 정책의 존재 여부 확인은 이후 검색 시스템이 담당합니다. 
-    당신의 역할은 오직 "사용자가 특정 정책을 지칭하고 있는가, 그렇다면 어떤 이름으로 보이는가"를 추출하는 것입니다.
-    
-    - 이름을 정확히 기억하지 못하지만 특정 제도를 가리키는 표현("~인가 뭔가 있다던데")을 썼을 때만 후보 정책명을 유추하세요.
-      자기 상황을 말하며 지원을 찾는 경우는 유추하지 말고 빈 리스트를 반환하세요.
-      (예: "장애인한테 주는 연금인가 뭔가가 있다던데" → ["장애인연금", "장애수당"])
-    - 사용자가 특정 정책명을 언급했지만, 그런 이름의 정책이 실제로 존재하는지 확신할 수 없어도 그대로 추출하세요. 
-      당신이 모르는 정책일 수도, 사용자가 이름을 잘못 기억했을 수도, 아예 존재하지 않는 이름일 수도 있지만, 
-      이를 판단하지 말고 언급된 그대로 추출하세요.
-      (예: "청년희망꿈나래지원금이라는 거 신청하고 싶어요" → ["청년희망꿈나래지원금"])
-    - 정책명이 전혀 언급되지 않았고 유추할 단서도 없다면 빈 리스트를 반환하세요.
-    """
-        )
+    search_query: str = Field(
+        default="",
+        description="이전 대화와 이번 질문을 합쳐, 그것만 읽어도 뜻이 통하는 한두 문장의 검색 질의. "
+                    "이번 질문이 이미 완결된 문장이면 거의 그대로 쓰고, 후속 질문이면 이전 대화의 주제를 합칠 것. "
+                    "정책명이 언급되면 그대로 포함하고, 대화에 없는 내용은 지어내지 말 것."
+    )
+    topic_given: bool = Field(
+        default=True,
+        description="이번 발화와 이전 대화를 합쳐서 검색할 구체적 주제(특정 정책명, 분야, 자기 상황 중 하나)가 있으면 true, "
+                    "'받을 수 있는 지원금 있어?'처럼 아무 단서도 없으면 false."
+    )
     #생애주기
     life_cycle: Optional[Literal["임신·출산", "영유아", "아동", "청소년", "청년", "중장년", "노년"]] = Field(
         default=None,
         description="이번 발화에서 파악된 화자 본인의 생애주기. 언급 없으면 None(이전 값 유지), "
                     "새로 언급되면 그 값으로 교체(이전 값 무효)."
     )
-    
-        
     #상황
     target_group_add: List[Literal["저소득", "장애인", "한부모·조손", "다자녀", "다문화·탈북민", "보훈대상자"]] = Field(default_factory=list)
     target_group_remove: List[Literal["저소득", "장애인", "한부모·조손", "다자녀", "다문화·탈북민", "보훈대상자"]] = Field(default_factory=list)
@@ -72,24 +60,19 @@ class ConditionExtraction(BaseModel):
     theme_add: List[Literal["신체건강", "정신건강", "생활지원", "주거", "일자리", "문화·여가", "안전·위기", "임신·출산", "보육", "교육", "입양·위탁", "보호·돌봄", "서민금융", "법률", "에너지"]] = Field(default_factory=list)
     theme_remove: List[Literal["신체건강", "정신건강", "생활지원", "주거", "일자리", "문화·여가", "안전·위기", "임신·출산", "보육", "교육", "입양·위탁", "보호·돌봄", "서민금융", "법률", "에너지"]] = Field(default_factory=list)
     
-    
-    
 
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add] # Annotated와 operator.add를 사용하면, 이전 대화 기록에 새 메시지가 계속 누적(append)됩니다.
     current_query: str
 
-    intent: str # LLM이 판단한 의도 (일상대화 / 조건부족 / 검색가능)
-    search_keywords: List[str]
-    policy_names: List[str]
+    intent: str # LLM이 판단한 의도 (일상대화 / 조건부족 / 검색가능 / 상세요구 / 프롬프트공격)
+    search_query: str 
     life_cycle: List[str]
     target_group: List[str]
     theme: List[str]
 
     ask_count: int
-    is_narrow: bool # 조건이 좁혀졌는가?
-    narrow_target_slot: str       # 다음에 물어보면 가장 효율적인 슬롯 ("life_cycle"/"target_group"/"theme")
-    answer_notice: str  
+    
 
     #검색 누적 보관함
     search_results: str # Neo4j DB에서 검색해 온 최종 정책 데이터 

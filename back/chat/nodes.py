@@ -118,8 +118,6 @@ def classify_intent_node(state: AgentState):
     return {
         "intent": intent,
         "target_policy": targets,
-        "answer_notice": "",       # 모든 경로에서 매 턴 초기화 (상세요구는 B를 안 거치므로 여기서 해야 함)
-        "narrow_target_slot": ""
     }
     
 
@@ -174,243 +172,114 @@ def extract_conditions_node(state: AgentState):
         life_cycle_value = "임신 · 출산"
     life_cycle = [life_cycle_value] if life_cycle_value is not None else state.get("life_cycle", [])
 
-    policy_names = result.policy_names
-    search_keywords = result.search_keywords
+
+
+    search_query = result.search_query.strip() or state.get("current_query", "")
     filled_slots_count = sum(1 for slot in [life_cycle, target_group, theme] if slot)
 
-    final_intent = "검색가능" if (policy_names or filled_slots_count >= 1) else "조건부족"
+    final_intent = "검색가능" if (result.topic_given or filled_slots_count >= 1) else "조건부족"
 
     print(f"분석 결과: {final_intent} (이유: {result.reasoning})")
-    print(f"추출된 정책명: {policy_names}")
-    print(f"추출된 키워드: {search_keywords}")
+    print(f"검색 질의: {search_query} (topic_given: {result.topic_given})")
     print(f"추출된 조건: 생애({life_cycle}), 가구({target_group}), 주제({theme})")
     print("\n\n")
 
     return {
         "intent": final_intent,
-        "search_keywords": search_keywords,
-        "policy_names": policy_names,
+        "search_query": search_query,
         "life_cycle": life_cycle,
         "target_group": target_group,
         "theme": theme,
     }
-
-#---------------------------------------
-#검색양이 많은가?(검색 가능한가?)
-
-THRESHOLD = 10
-
-SLOT_RELATIONS = {
-    "life_cycle": ("TARGETS_AGE", "LifeCycle"),
-    "target_group": ("TARGETS_GROUP", "TargetGroup"),
-    "theme": ("RELATES_TO", "Theme"),
-}
-
-
-def check_specificity_node(state: AgentState):
-    print("검색 갯수 확인")
-
-    life_cycle = state.get("life_cycle", [])
-    target_group = state.get("target_group", [])
-    theme = state.get("theme", [])
-
-    filled = {
-        "life_cycle": life_cycle,
-        "target_group": target_group,
-        "theme": theme,
-    }
-
-    graph_filters = ""
-    if life_cycle:
-        graph_filters += "MATCH (p)-[:TARGETS_AGE]->(l:LifeCycle) WHERE l.name IN $life_cycle\n"
-    if target_group:
-        graph_filters += "MATCH (p)-[:TARGETS_GROUP]->(t:TargetGroup) WHERE t.name IN $target_group\n"
-    if theme:
-        graph_filters += "MATCH (p)-[:RELATES_TO]->(th:Theme) WHERE th.name IN $theme\n"
-
-    params = {"life_cycle": life_cycle, "target_group": target_group, "theme": theme}
-
-    count_query = f"""
-    MATCH (p:Policy)
-    {graph_filters}
-    RETURN count(DISTINCT p) AS cnt
-    """
-    result = graph.query(count_query, params=params)
-    cnt = result[0]["cnt"] if result else 0
-    print(f"현재 조건으로 {cnt}개 후보")
-
-    if cnt <= THRESHOLD:
-        return {"is_narrow": True, "narrow_target_slot": "", "answer_notice": ""}
-
-    unfilled = {slot for slot, val in filled.items() if not val}
-
-    if not unfilled:
-        # 다 채웠는데도 많음 -> 더 물어볼 게 없으니 그냥 진행
-        notice = f"조건에 맞는 정책이 {cnt}개로 많아, 대표적인 정책 위주로 안내합니다."
-        return {"is_narrow": True, "narrow_target_slot": "", "answer_notice": notice}
-
-    best_slot = None
-    best_worst_case = None
-
-    for slot in unfilled:
-        rel, label = SLOT_RELATIONS[slot]
-        dist_query = f"""
-        MATCH (p:Policy)
-        {graph_filters}
-        MATCH (p)-[:{rel}]->(x:{label})
-        RETURN x.name AS name, count(DISTINCT p) AS cnt
-        ORDER BY cnt DESC
-        LIMIT 1
-        """
-        dist_result = graph.query(dist_query, params=params)
-        worst_case = dist_result[0]["cnt"] if dist_result else cnt  # 정보 없으면 최악으로 취급
-
-        if best_worst_case is None or worst_case < best_worst_case:
-            best_worst_case = worst_case
-            best_slot = slot
-
-    notice = (f"조건에 맞는 정책이 {cnt}개로 많아 상위 결과만 안내합니다. "
-    f"답변 끝에 '{SLOT_LABELS[best_slot]}를 알려주시면 더 좁혀드릴 수 있어요'라고 덧붙이세요.")
-
-    return {"is_narrow": True, "narrow_target_slot": best_slot or "", "answer_notice": notice}
 
 
 # --------------------------------------------
 # 검색
+
+VEC_TOP_K = 30
+VEC_THRESHOLD = 0.63
+SLOT_BOOST = 0.03
+RESULT_LIMIT = 5
+CHUNKS_PER_POLICY = 2
+CHUNK_MAX_CHARS = 1200
+
 def execute_search_node(state: AgentState):
     print("db 검색")
-    
-    # 마지막 쿼리, 조건 추출
-    latest_message = state["current_query"]
-    policy_names = state.get("policy_names", [])
+
+    query_text = state.get("search_query") or state["current_query"]
     life_cycle = state.get("life_cycle", [])
     target_group = state.get("target_group", [])
     theme = state.get("theme", [])
 
-    #조건으로 필터링
-    graph_filters = ""
-    if life_cycle:
-        graph_filters += "MATCH (p)-[:TARGETS_AGE]->(l:LifeCycle) WHERE l.name IN $life_cycle\n"
-    if target_group:
-        graph_filters += "MATCH (p)-[:TARGETS_GROUP]->(t:TargetGroup) WHERE t.name IN $target_group\n"
-    if theme:
-        graph_filters += "MATCH (p)-[:RELATES_TO]->(th:Theme) WHERE th.name IN $theme\n"
-    if policy_names:
-        graph_filters = ""
+    query_embedding = query_emb_model.embed_query(query_text)
 
-    params = {
-        "life_cycle": life_cycle,
-        "target_group": target_group,
-        "theme": theme,
-        "threshold": 0.63
-    }
+    cypher_vec = """
+    CALL db.index.vector.queryNodes('chunk_embedding_index', $k, $query_embedding)
+        YIELD node AS c, score AS vec_score
+    MATCH (p:Policy)-[:HAS_INFO]->(c)
+    WITH p, max(vec_score) AS max_score,
+         collect({type: c.type, content: c.content, score: vec_score}) AS hits
+    WHERE max_score >= $threshold
+    RETURN p.servId AS id, p.servNm AS title, p.servDgst AS digest,
+           [(p)-[:MANAGED_BY]->(d:Department) | d.name][0] AS department,
+           [(p)-[:PROVIDES]->(s:SupportType) | s.name][0] AS support_type,
+           max_score AS score, hits,
+           [(p)-[:TARGETS_AGE]->(l:LifeCycle) | l.name] AS life_cycles,
+           [(p)-[:TARGETS_GROUP]->(t:TargetGroup) | t.name] AS target_groups,
+           [(p)-[:RELATES_TO]->(th:Theme) | th.name] AS themes
+    """
+    records = graph.query(cypher_vec, params={
+        "k": VEC_TOP_K,
+        "query_embedding": query_embedding,
+        "threshold": VEC_THRESHOLD,
+    })
 
-    records = []
+    # 조건이 일치하는 슬롯 하나당 가산점 (필터가 아니라 순위 보정)
+    def boosted(r):
+        matched = (bool(set(life_cycle) & set(r["life_cycles"]))
+                   + bool(set(target_group) & set(r["target_groups"]))
+                   + bool(set(theme) & set(r["themes"])))
+        return r["score"] + SLOT_BOOST * matched
 
-    # full-text 검색
+    records = sorted(records, key=boosted, reverse=True)[:RESULT_LIMIT]
 
-    name_not_found = False
-    if policy_names:    # 정책명이 있을 때만, 정책명끼리 OR, 태그 필터 없이
-        names = [n.replace('"', '').strip() for n in policy_names if n.strip()]
-        params["ft_query"] = " OR ".join(f'"{n}"' for n in names)
-        cypher_ft = """
-        CALL db.index.fulltext.queryNodes('policy_name_index', $ft_query) YIELD node AS p, score AS ft_score
-        OPTIONAL MATCH (p)-[:MANAGED_BY]->(d:Department)
-        OPTIONAL MATCH (p)-[:PROVIDES]->(s:SupportType)
-        RETURN p.servId AS id, p.servNm AS title, p.servDgst AS digest,
-               d.name AS department, s.name AS support_type, ft_score AS score
-        LIMIT 3
-        """
-        try:
-            records = graph.query(cypher_ft, params=params)
-            print(f"full-context 검색 결과: {records}")
-        except Exception as e:
-            print(f"Full-Text 검색 중 예외 발생 (무시하고 벡터로 전환): {e}")
-            records = []
-        name_not_found = not records
-        
-    chunks_by_id = {}
-
-    if records:   # 정책명이 정확히 매칭됐을 때만 상세 원문 가져오기
-        ids = [r['id'] for r in records]
-        chunk_rows = graph.query("""
-            MATCH (p:Policy) WHERE p.servId IN $ids
-            MATCH (p)-[:HAS_INFO]->(c:Chunk)
-            RETURN p.servId AS id, c.type AS type, c.content AS content
-        """, params={"ids": ids})
-        for row in chunk_rows:
-            chunks_by_id.setdefault(row['id'], []).append(f"■ {row['type']}\n{row['content']}")
-
-
-
-    
-    if not records:
-        print("벡터 검색 시도")
-        if policy_names:
-            graph_filters = ""  # 정책을 특정하려던 시도였다면 조건 필터 제거
-       
-        query_embedding = query_emb_model.embed_query(latest_message)  
-            
-        params["query_embedding"] = query_embedding
-        
-        cypher_vec = f"""
-        CALL db.index.vector.queryNodes('chunk_embedding_index', 15, $query_embedding) YIELD node AS c, score AS vec_score
-        MATCH (p:Policy)-[:HAS_INFO]->(c)
-        {graph_filters}
-        WITH p, max(vec_score) AS max_score
-        WHERE max_score >= $threshold
-        ORDER BY max_score DESC
-        LIMIT 5
-        OPTIONAL MATCH (p)-[:MANAGED_BY]->(d:Department)
-        OPTIONAL MATCH (p)-[:PROVIDES]->(s:SupportType)
-        RETURN p.servId AS id, p.servNm AS title, p.servDgst AS digest, 
-               d.name AS department, s.name AS support_type, max_score AS score
-        """
-        records = graph.query(cypher_vec, params=params)
-
-
-    
     if not records:
         formatted_results = "조건에 맞는 복지 정책을 찾지 못했습니다."
         rec_ids, rec_names = [], []
     else:
-        result_texts = []
-        rec_ids, rec_names = [], []
-        
+        result_texts, rec_ids, rec_names = [], [], []
         for i, record in enumerate(records):
-            rec_ids.append(record['id'])
-            rec_names.append(record['title'])
+            rec_ids.append(record["id"])
+            rec_names.append(record["title"])
 
-            detail = chunks_by_id.get(record['id'])
-            body = "\n\n".join(detail) if detail else f"- 요약: {record['digest']}"
+            # 벡터가 찾은 청크 중 점수 높은 순, 같은 type은 1개만
+            seen, parts = set(), []
+            for h in sorted(record["hits"], key=lambda h: h["score"], reverse=True):
+                if h["type"] in seen:
+                    continue
+                seen.add(h["type"])
+                parts.append(f"■ {h['type']}\n{(h['content'] or '')[:CHUNK_MAX_CHARS]}")
+                if len(parts) >= CHUNKS_PER_POLICY:
+                    break
+            body = "\n\n".join(parts) if parts else f"- 요약: {record['digest']}"
 
-            text = (
+            result_texts.append(
                 f"[{i+1}순위] 정책명: {record['title']} (Score: {record['score']:.4f})\n"
-                f"- 담당부처: {record.get('department', '정보없음')}\n"
-                f"- 제공유형: {record.get('support_type', '정보없음')}\n"
+                f"- 담당부처: {record.get('department') or '정보없음'}\n"
+                f"- 제공유형: {record.get('support_type') or '정보없음'}\n"
                 f"{body}\n{'-' * 30}"
             )
-            
-            result_texts.append(text)
-            
         formatted_results = "\n".join(result_texts)
-        
         print(f"{len(records)}개 정책 검색: {rec_names}")
-    
-    extra = {}
-    if name_not_found and records:
-        extra["answer_notice"] = ("사용자가 언급한 정책명이 데이터베이스에서 확인되지 않았습니다. "
-                                  "이 사실을 먼저 알리고, 아래 정책은 유사한 다른 정책임을 밝혀 안내하세요.")
 
-    
     return {
         "search_results": formatted_results,
-        "recommended_ids": rec_ids,       
+        "recommended_ids": rec_ids,
         "recommended_names": rec_names,
         "current_recommended_ids": rec_ids,
         "current_recommended_names": rec_names,
         "recommendation_history": [rec_names],
-        **extra,
+        "ask_count": 0,
     }
 
 
@@ -484,12 +353,9 @@ def generate_answer_node(state: AgentState):
     search_results = state.get("search_results", "검색 결과가 없습니다.")
 
     intent = state.get("intent", "")
-    notice = state.get("answer_notice", "")
 
     if search_results.startswith("조건에 맞는 복지 정책을 찾지 못했습니다"):
-        msg = ("요청하신 정책을 데이터베이스에서 찾지 못했습니다. 정책명을 다시 확인해 주세요."
-               if state.get("policy_names")
-               else "조건에 맞는 정책을 찾지 못했습니다. 상황을 조금 다르게 말씀해 주시면 다시 찾아볼게요.")
+        msg = "조건에 맞는 정책을 찾지 못했습니다. 상황을 조금 다르게 말씀해 주시면 다시 찾아볼게요."
         return {"messages": [AIMessage(content=msg)]}
     if search_results.startswith(("이전에 추천해", "해당 정책의 상세 정보")):
         return {"messages": [AIMessage(content=search_results)]}
@@ -497,12 +363,11 @@ def generate_answer_node(state: AgentState):
     if intent == "상세요구":
         guide = "사용자가 선택한 정책의 [상세 정보]를 제공 중입니다. 정보를 누락하지 말고 상세하고 친절하게 정리해 주세요."
     else:
-        guide = "여러 정책의 [목록과 요약]을 제공 중입니다. 요약하여 소개한 뒤 '더 자세히 알고 싶은 정책이 있다면 번호나 이름을 말씀해 주세요'라고 유도하세요."
+        guide = ("여러 정책의 [목록과 요약]을 제공 중입니다. 사용자가 신청 방법, 지원 대상, 지원 내용 등 특정 정보를 물었다면 "
+                 "그 정보를 먼저 답하세요. 요약하여 소개한 뒤 '더 자세히 알고 싶은 정책이 있다면 번호나 이름을 말씀해 주세요'라고 유도하세요.")
 
     
 
-    if notice:
-        guide = notice + " "  + guide
     formatted_prompt = ANSWER_SYSTEM_PROMPT.format(
         guide=guide, 
         search_results=search_results
@@ -549,27 +414,14 @@ def block_attack_node(state: AgentState):
     response = "서비스 검색과 무관한 지시, 시스템 설정을 변경하려는 요청은 응답할수없습니다."
     return {"messages": [AIMessage(content=response)]}
 
-# --------------------------------------------------------- 
-# 슬롯필링
 
-SLOT_LABELS = {
-    "life_cycle": "생애주기(예: 청년, 노년 등)",
-    "target_group": "가구 상황(예: 저소득, 장애인, 한부모 등)",
-    "theme": "관심 주제(예: 주거, 일자리, 육아 등)",
-}
+
 
 def ask_for_details_node(state: AgentState):
     print("부족한 조건 묻기")
-
-    target_slot = state.get("narrow_target_slot", "")
-    addendum = ""
-    if target_slot and target_slot in SLOT_LABELS:
-        addendum = f"\n\n특히 다음 정보를 우선적으로 물어보세요: {SLOT_LABELS[target_slot]}"        
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", ASK_DETAILS_PROMPT + addendum),
+    response = (ChatPromptTemplate.from_messages([
+        ("system", ASK_DETAILS_PROMPT),
         MessagesPlaceholder(variable_name="messages")
-    ])
-    
-    response = (prompt | chat_llm).invoke({"messages": state["messages"]})
+    ]) | chat_llm).invoke({"messages": state["messages"]})
     return {"messages": [response], "ask_count": state.get("ask_count", 0) + 1}
