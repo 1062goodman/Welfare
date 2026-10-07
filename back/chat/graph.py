@@ -12,6 +12,7 @@ from nodes import (
     execute_detail_search_node,
     generate_answer_node,
     block_attack_node,
+    resolve_target_node
     )
 
 # ---------------------------------------------------------
@@ -24,7 +25,7 @@ def route_by_intent(state: AgentState) -> str:
     if intent == "일상대화":
         return "general_chat"
     elif intent == "상세요구":
-        return "execute_detail_search"
+        return "resolve_target" 
     elif intent == "프롬프트공격":
             return "block_attack"
     return "extract_conditions"
@@ -39,6 +40,12 @@ def route_by_extraction(state: AgentState) -> str:
     return "execute_search"
 
 
+
+def route_after_resolve(state: AgentState) -> str:   
+    if state.get("intent") == "상세요구":
+        return "execute_detail_search"
+    return "extract_conditions"
+
 # ---------------------------------------------------------
 # 랭그래프
 
@@ -49,6 +56,7 @@ workflow.add_node("pre_summarize", pre_summarize_node)
 workflow.add_node("classify_intent", classify_intent_node)
 workflow.add_node("general_chat", general_chat_node)
 workflow.add_node("extract_conditions", extract_conditions_node)
+workflow.add_node("resolve_target", resolve_target_node)   
 workflow.add_node("ask_for_details", ask_for_details_node)
 workflow.add_node("execute_search", execute_search_node)
 workflow.add_node("execute_detail_search", execute_detail_search_node)
@@ -65,6 +73,7 @@ workflow.add_conditional_edges(
     route_by_intent
 )
 workflow.add_conditional_edges("extract_conditions", route_by_extraction)
+workflow.add_conditional_edges("resolve_target", route_after_resolve)   
 
 
 # 일반 엣지 (쿼리 요약->의도분석)

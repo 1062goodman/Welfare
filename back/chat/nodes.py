@@ -2,13 +2,14 @@ import os
 from dotenv import load_dotenv, find_dotenv
 from langchain_neo4j import Neo4jGraph
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_upstage import ChatUpstage
 from langchain_upstage.embeddings import UpstageEmbeddings
 
-from state import AgentState, IntentClassification, ConditionExtraction
+from state import AgentState, IntentClassification, ConditionExtraction, TargetResolution
 from prompts import (
     INTENT_SYSTEM_PROMPT, 
+    RESOLVE_SYSTEM_PROMPT,
     ANSWER_SYSTEM_PROMPT, 
     EXTRACT_SYSTEM_PROMPT,
     GENERAL_CHAT_PROMPT, 
@@ -63,63 +64,70 @@ extract_chain = extract_prompt | llm.with_structured_output(ConditionExtraction)
 
 
 def classify_intent_node(state: AgentState):
-
-    messages = state["messages"]
-    current_names = state.get("current_recommended_names", [])
-
-    history = state.get("recommendation_history", [])
-    history_str = ""
-    for turn_idx, names in enumerate(history):
-        history_str += f"[{turn_idx+1}번째 검색 결과]\n"
-        for i, name in enumerate(names):
-         history_str += f"  {i+1}. {name}\n"
-    if not history_str:
-        history_str = "없음"
-
-    if current_names:
-        current_names_str = "\n".join(
-            f"{i+1} . {name}" for i, name in enumerate(current_names)
-        )
-    else:
-        current_names_str = "없음"
-
-
     result = None
     for _ in range(2):
         try:
-            result = intent_chain.invoke({"messages": messages,
-                                          "current_recommendations": current_names_str,
-                                          "search_history": history_str})
+            result = intent_chain.invoke({"messages": state["messages"]})
         except Exception as e:
             print(f"의도 분류 호출 실패: {e}")
         if result is not None:
             break
-    if result is None:   # 두 번 다 실패하면 기본값
+    if result is None:
         result = IntentClassification(intent="복지검색", reasoning="구조화 출력 실패, 기본값 적용")
 
-    intent, targets = result.intent, result.target_policy
+    intent = result.intent
+    if intent == "상세요구" and not state.get("recommendation_history"):
+        intent = "복지검색"   # 보여준 목록이 없으면 상세요구 불가 (LLM 호출 없이 강등)
 
-    if intent == "상세요구":
-        all_names = state.get("recommended_names", [])
-        def valid(t):
-            if t.isdigit():
-                return 0 < int(t) <= len(current_names)
-            return any(t in n or n in t for n in all_names)
-        targets = [t for t in targets if valid(t)]
-        if not targets:            # 목록에 없는 걸 가리켰으면 새 검색으로 강등
-            intent = "복지검색"
-    else:
-        targets = []
-
-    print(f"분석 결과: {intent} (이유: {result.reasoning})")
-    print(f"상세요구 대상: {targets}")
-    print("\n\n")
-
-    return {
-        "intent": intent,
-        "target_policy": targets,
-    }
+    print(f"분석 결과: {intent} (이유: {result.reasoning})\n\n")
+    return {"intent": intent, "target_policy": []}
     
+
+
+resolve_prompt = ChatPromptTemplate.from_messages([
+    ("system", RESOLVE_SYSTEM_PROMPT),
+    ("placeholder", "{messages}")
+])
+resolve_chain = resolve_prompt | llm.with_structured_output(TargetResolution)
+
+
+def resolve_target_node(state: AgentState):
+    history = state.get("recommendation_history", [])
+    current_names = state.get("current_recommended_names", [])
+    all_names = state.get("recommended_names", [])
+
+    history_str = ""
+    for turn_idx, names in enumerate(history):
+        tag = " (가장 최근 = 현재 목록)" if turn_idx == len(history) - 1 else ""
+        history_str += f"[{turn_idx+1}번째 검색 결과{tag}]\n"
+        for i, name in enumerate(names):
+            history_str += f"  {i+1}. {name}\n"
+    current_names_str = "\n".join(f"{i+1}. {n}" for i, n in enumerate(current_names)) or "없음"
+
+    result = None
+    for _ in range(2):
+        try:
+            result = resolve_chain.invoke({
+                "messages": state["messages"],
+                "current_recommendations": current_names_str,
+                "search_history": history_str or "없음",
+            })
+        except Exception as e:
+            print(f"대상 지목 호출 실패: {e}")
+        if result is not None:
+            break
+
+    def valid(t):
+        if t.isdigit():
+            return 0 < int(t) <= len(current_names)
+        return any(t in n or n in t for n in all_names)
+
+    targets = [t for t in (result.target_policy if result else []) if valid(t)]
+    intent = "상세요구" if targets else "복지검색"   # 못 찾으면 새 검색으로 강등
+
+    print(f"대상 지목: {targets} (이유: {result.reasoning if result else '호출 실패'})\n\n")
+    return {"intent": intent, "target_policy": targets}
+
 
 # --------------------------------------------
 # 선요약
@@ -162,7 +170,7 @@ def extract_conditions_node(state: AgentState):
         result = ConditionExtraction(reasoning="구조화 출력 실패, 기본값 적용")
 
     def merge_condition(prev, add, remove):
-        return list((set(prev) | set(add)) - set(remove))   # 괄호 추가 (아래 버그 설명 참고)
+        return list((set(prev) | set(add)) - set(remove))   
 
     target_group = merge_condition(state.get("target_group", []), result.target_group_add, result.target_group_remove)
     theme = merge_condition(state.get("theme", []), result.theme_add, result.theme_remove)
@@ -333,6 +341,8 @@ def execute_detail_search_node(state: AgentState):
             details_by_policy[pid] = {"title": r['title'], "chunks": []}
         details_by_policy[pid]["chunks"].append(f"■ {r['type']}\n{r['content']}")
 
+    print(f"[detail] targets={targets}, matched_ids={matched_ids}, 가져온 정책={[d['title'] for d in details_by_policy.values()]}")
+    
     # 상세 정보 텍스트 가공
     result_texts = []
     for pid, data in details_by_policy.items():
@@ -340,7 +350,10 @@ def execute_detail_search_node(state: AgentState):
         result_texts.append(text)
         
   
-    return {"search_results": "\n\n".join(result_texts)}
+    return {
+        "search_results": "\n\n".join(result_texts),
+        "detail_titles": [d["title"] for d in details_by_policy.values()],
+    }
 
 
 
@@ -365,6 +378,13 @@ def generate_answer_node(state: AgentState):
     else:
         guide = ("여러 정책의 [목록과 요약]을 제공 중입니다. 사용자가 신청 방법, 지원 대상, 지원 내용 등 특정 정보를 물었다면 "
                  "그 정보를 먼저 답하세요. 요약하여 소개한 뒤 '더 자세히 알고 싶은 정책이 있다면 번호나 이름을 말씀해 주세요'라고 유도하세요.")
+
+    if intent == "상세요구" and state.get("detail_titles"):
+        titles = ", ".join(state["detail_titles"])
+        messages = messages[:-1] + [HumanMessage(
+            content=f"{messages[-1].content}\n[시스템 확인: 이 질문의 대상 정책은 '{titles}'입니다]"
+        )]
+    
 
     
 

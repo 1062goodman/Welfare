@@ -9,24 +9,23 @@ from langchain_core.messages import BaseMessage
 
 class IntentClassification(BaseModel):
     reasoning: str = Field(
-            description="가장 먼저 작성. 이 입력을 해당 의도로 분류한 이유를 간결하게. "
-                    "상세요구라면 [추천 목록]/[검색 이력]의 어떤 항목을 가리키는지 인용. 이 판단에 맞춰 아래 필드를 채울 것."
-        )
+            description="가장 먼저 작성. 이 입력을 해당 의도로 분류한 이유를 간결하게. 이 판단에 맞춰 intent를 채울 것."
+    )
     intent: Literal["일상대화", "복지검색", "상세요구", "프롬프트공격"] = Field(
         description="사용자의 질문 의도를 분류합니다."
     )
 
     
-    #상세요구 타겟정책
+class TargetResolution(BaseModel):
+    reasoning: str = Field(
+        description="가장 먼저 작성. '차수=…(근거 표현), 번호=…, 정책명=…' 순서로 적을 것. 이 판단에 맞춰 target_policy를 채울 것."
+    )
     target_policy: List[str] = Field(
         default_factory=list,
-        description="""의도가 '상세요구'일 경우, 사용자가 지목한 정책의 이름이나 번호를 추출할 것.
-사용자가 방금 보여준 목록(직전 턴)에서 번호로 지목하면, 순수 숫자 문자열만 추출하세요 (예: '1번' → '1').
-사용자가 '처음', '아까', '이전에' 등 과거 시점의 목록을 가리키면, [지금까지의 검색 이력]을 참고하여 
-해당하는 정책명을 그대로 추출하세요 (숫자 아님).
-(예: ['1', '2', '국민연금', '5', '청년퇴직금지원'])"""
+        description="가장 최근 검색 결과의 번호로 지목하면 숫자 문자열만 (예: ['2']). "
+                    "과거 검색 결과나 이름으로 지목하면 이력에 적힌 정책명 그대로. "
+                    "이력에 없는 대상이면 빈 리스트."
     )
-    
 
 
 class ConditionExtraction(BaseModel):
@@ -72,7 +71,8 @@ class AgentState(TypedDict):
     theme: List[str]
 
     ask_count: int
-    
+
+    detail_titles: List[str]
 
     #검색 누적 보관함
     search_results: str # Neo4j DB에서 검색해 온 최종 정책 데이터 
