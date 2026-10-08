@@ -42,6 +42,12 @@ query_emb_model = UpstageEmbeddings(
 #db연결
 graph = Neo4jGraph()
 
+HISTORY_TURNS = 3
+
+def last_turns(msgs, n=HISTORY_TURNS):
+    idx = [i for i, m in enumerate(msgs) if isinstance(m, HumanMessage)]
+    return msgs[idx[-n]:] if len(idx) >= n else msgs
+
 
 # --------------------------------------------------------- 
 # 의도 분류 라우팅
@@ -68,7 +74,7 @@ def classify_intent_node(state: AgentState):
     result = None
     for _ in range(2):
         try:
-            result = intent_chain.invoke({"messages": state["messages"]})
+            result = intent_chain.invoke({"messages": last_turns(state["messages"])})
         except Exception as e:
             print(f"의도 분류 호출 실패: {e}")
         if result is not None:
@@ -109,9 +115,10 @@ def resolve_target_node(state: AgentState):
     for _ in range(2):
         try:
             result = resolve_chain.invoke({
-                "messages": state["messages"],
+                "messages": last_turns(state["messages"]),
                 "current_recommendations": current_names_str,
                 "search_history": history_str or "없음",
+                "last_detail": ", ".join(state.get("detail_titles", [])) or "없음"
             })
         except Exception as e:
             print(f"대상 지목 호출 실패: {e}")
@@ -162,7 +169,13 @@ def extract_conditions_node(state: AgentState):
     result = None
     for _ in range(2):
         try:
-            result = extract_chain.invoke({"messages": state["messages"]})
+            result = extract_chain.invoke({
+                "messages": last_turns(state["messages"]),
+                "prev_query": state.get("search_query") or "없음",
+                "current_conditions": (f"생애주기={state.get('life_cycle') or '없음'}, "
+                                       f"가구상황={state.get('target_group') or '없음'}, "
+                                       f"주제={state.get('theme') or '없음'}"),
+            })
         except Exception as e:
             print(f"조건 추출 호출 실패: {e}")
         if result is not None:
@@ -288,6 +301,7 @@ def execute_search_node(state: AgentState):
         "current_recommended_ids": rec_ids,
         "current_recommended_names": rec_names,
         "ask_count": 0,
+        "detail_titles": []
     }
 
 
@@ -362,7 +376,7 @@ def execute_detail_search_node(state: AgentState):
 def generate_answer_node(state: AgentState):
     print("답변 생성")
     
-    messages = state["messages"] 
+    messages = last_turns(state["messages"]) 
     search_results = state.get("search_results", "검색 결과가 없습니다.")
 
     intent = state.get("intent", "")
@@ -438,7 +452,7 @@ def general_chat_node(state: AgentState):
         MessagesPlaceholder(variable_name="messages")
     ])
     
-    response = (prompt | chat_llm).invoke({"messages": state["messages"]})
+    response = (prompt | chat_llm).invoke({"messages":last_turns(state["messages"])})
     return {"messages": [response]}
 
 
@@ -460,5 +474,5 @@ def ask_for_details_node(state: AgentState):
     response = (ChatPromptTemplate.from_messages([
         ("system", ASK_DETAILS_PROMPT),
         MessagesPlaceholder(variable_name="messages")
-    ]) | chat_llm).invoke({"messages": state["messages"]})
+    ]) | chat_llm).invoke({"messages": last_turns(state["messages"])})
     return {"messages": [response], "ask_count": state.get("ask_count", 0) + 1}
