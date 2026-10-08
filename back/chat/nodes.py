@@ -1,4 +1,5 @@
 import os
+import re
 from dotenv import load_dotenv, find_dotenv
 from langchain_neo4j import Neo4jGraph
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -23,14 +24,14 @@ load_dotenv(find_dotenv())
 api_key=os.getenv('UPSTAGE_API_KEY')
 
 #선요약
-summarize_llm = ChatUpstage(model="solar-mini",timeout=60, max_retries=1)
+summarize_llm = ChatUpstage(model="solar-mini",timeout=60, max_retries=1, temperature=0)
 
 #의도분류
-llm = ChatUpstage(model="solar-pro", timeout=60, max_retries=1)
+llm = ChatUpstage(model="solar-pro", timeout=60, max_retries=1, temperature=0)
 structured_llm = llm.with_structured_output(IntentClassification)
 
 #대화
-chat_llm = ChatUpstage(model="solar-pro",timeout=60, max_retries=1)
+chat_llm = ChatUpstage(model="solar-pro",timeout=60, max_retries=1, temperature=0)
 
 #임베딩 모델
 query_emb_model = UpstageEmbeddings(
@@ -206,7 +207,7 @@ def extract_conditions_node(state: AgentState):
 
 VEC_TOP_K = 30
 VEC_THRESHOLD = 0.63
-SLOT_BOOST = 0.03
+SLOT_BOOST=0.03
 RESULT_LIMIT = 5
 CHUNKS_PER_POLICY = 2
 CHUNK_MAX_CHARS = 1200
@@ -286,7 +287,6 @@ def execute_search_node(state: AgentState):
         "recommended_names": rec_names,
         "current_recommended_ids": rec_ids,
         "current_recommended_names": rec_names,
-        "recommendation_history": [rec_names],
         "ask_count": 0,
     }
 
@@ -369,7 +369,7 @@ def generate_answer_node(state: AgentState):
 
     if search_results.startswith("조건에 맞는 복지 정책을 찾지 못했습니다"):
         msg = "조건에 맞는 정책을 찾지 못했습니다. 상황을 조금 다르게 말씀해 주시면 다시 찾아볼게요."
-        return {"messages": [AIMessage(content=msg)]}
+        return {"messages": [AIMessage(content=msg)], "recommendation_history": [[]]}
     if search_results.startswith(("이전에 추천해", "해당 정책의 상세 정보")):
         return {"messages": [AIMessage(content=search_results)]}
     
@@ -384,9 +384,7 @@ def generate_answer_node(state: AgentState):
         messages = messages[:-1] + [HumanMessage(
             content=f"{messages[-1].content}\n[시스템 확인: 이 질문의 대상 정책은 '{titles}'입니다]"
         )]
-    
 
-    
 
     formatted_prompt = ANSWER_SYSTEM_PROMPT.format(
         guide=guide, 
@@ -406,8 +404,27 @@ def generate_answer_node(state: AgentState):
         "search_results": search_results,
         "messages": messages
     })
-    
+
+
+    if intent != "상세요구":   # 목록을 보여준 턴: 화면에 나온 순서로 갱신
+        norm = lambda s: re.sub(r"\s+", "", s)
+        text, seen, shown = norm(response.content), set(), []
+        for pid, name in zip(state.get("current_recommended_ids", []), state.get("current_recommended_names", [])):
+            pos = text.find(norm(name))
+            if pos >= 0 and name not in seen:
+                seen.add(name); shown.append((pos, pid, name))
+        if shown:
+            shown.sort()
+            names = [n for _, _, n in shown]
+            return {"messages": [response],
+                    "current_recommended_ids": [i for _, i, _ in shown],
+                    "current_recommended_names": names,
+                    "recommendation_history": [names]}
+        return {"messages": [response],
+                "recommendation_history": [state.get("current_recommended_names", [])]}
     return {"messages": [response]}
+    
+
 
 # --------------------------------------------------------- 
 # 일상 대화

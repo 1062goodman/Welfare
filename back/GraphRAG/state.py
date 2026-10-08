@@ -8,8 +8,8 @@ from langchain_core.messages import BaseMessage
 # ---------------------------------------------------------출력상태 정의 
 
 class  SimpleExtraction(BaseModel):
-    earch_keywords: List[str] = Field(default_factory=list),
-    policy_names: List[str] = Field(default_factory=list),
+    search_keywords: List[str] = Field(default_factory=list)
+    policy_names: List[str] = Field(default_factory=list)
     life_cycle: List[Literal["임신·출산", "영유아", "아동", "청소년", "청년", "중장년", "노년"]] = Field(default_factory=list)
     target_group: List[Literal["저소득", "장애인", "한부모·조손", "다자녀", "다문화·탈북민", "보훈대상자"]] = Field(default_factory=list)
     theme: List[Literal["신체건강", "정신건강", "생활지원", "주거", "일자리", "문화·여가", "안전·위기", "임신·출산", "보육", "교육", "입양·위탁", "보호·돌봄", "서민금융", "법률", "에너지"]] = Field(default_factory=list)
