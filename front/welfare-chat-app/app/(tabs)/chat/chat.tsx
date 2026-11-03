@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform, PermissionsAndroid, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform, PermissionsAndroid, Keyboard, KeyboardAvoidingView} from 'react-native';
 import LiveAudioStream from 'react-native-live-audio-stream';
 import { Buffer } from 'buffer';
 
 import { get_chat_history, sendChatMessage, ReplyType } from '../../../api/chatApi';
 import { getSessionId } from '../../../utils/sessionManager';
 import { useFontSize } from '../../../contexts/font-size-context';
-import MascotHeader from '@/components/MascotHeader';
+import MascotHeader from '../../../components/MascotHeader';
 
 
 export default function ChatScreen() {
@@ -17,6 +17,8 @@ export default function ChatScreen() {
   const [wsStatus, setWsStatus] = useState<'connecting..' | 'open' | 'closed'>('connecting..');
   const [isRecording, setIsRecording] = useState(false); //  토글용 state 추가
   const [mood, setMood] = useState<ReplyType>('general');
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
 
 
 
@@ -72,6 +74,10 @@ export default function ChatScreen() {
     setupMic();
     connectWebSocket();
 
+    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
+    
+
     //채팅 불러오기
     const loadChatroom = async () => {
       try {
@@ -97,6 +103,7 @@ export default function ChatScreen() {
     return () => {
       if (ws.current) ws.current.close();
       LiveAudioStream.stop();
+      show.remove(); hide.remove();
     };
   }, []);
 
@@ -144,7 +151,9 @@ export default function ChatScreen() {
 
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+    style={styles.container}
+    behavior={Platform.OS === 'ios' ? 'padding' : 'height'} >
       {/* ✅ 상단 바: 설정 / 제목 / 메인으로 */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => {}}>
@@ -155,7 +164,8 @@ export default function ChatScreen() {
           <Text style={styles.headerIcon}>🏠</Text>
         </TouchableOpacity>
       </View>
-
+      
+      {!keyboardOpen && <MascotHeader mood={mood} />}
       <FlatList
         data={messages}
         renderItem={renderBubble}
@@ -197,7 +207,7 @@ export default function ChatScreen() {
           <Text style={styles.sendIcon}>➤</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
