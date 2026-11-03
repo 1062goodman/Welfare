@@ -464,3 +464,44 @@ def ask_for_details_node(state: AgentState):
         MessagesPlaceholder(variable_name="messages")
     ]) | chat_llm).invoke({"messages": state["messages"]})
     return {"messages": [response], "ask_count": state.get("ask_count", 0) + 1, "reply_type":"ask"}
+
+
+# --------------------------------카드 만들기
+CARD_PREFIX = re.compile(r"^\[정책명:[^\]]*\]\s*(?:지원대상|서비스내용|신청방법|요약)?\s*:?\s*")
+CARD_MAX = 600
+
+def build_cards_node(state: AgentState):
+    # 목록 안내가 아니면 카드 없음
+    if state.get("reply_type") != "list":
+        return {"cards": []}
+
+    ids = state.get("current_recommended_ids", [])
+    if not ids:
+        return {"cards": []}
+
+    try:
+        rows = graph.query("""
+            UNWIND range(0, size($ids)-1) AS i
+            MATCH (p:Policy) WHERE p.servId = $ids[i]
+            RETURN i, p.servId AS id, p.servNm AS name, p.servDgst AS digest,
+                   [(p)-[:MANAGED_BY]->(d:Department) | d.name][0] AS department,
+                   [(p)-[:HAS_INFO]->(c:Chunk) | {type: c.type, content: c.content}] AS chunks
+            ORDER BY i
+        """, params={"ids": ids})
+    except Exception as e:
+        print(f"카드 조회 실패: {e}")
+        return {"cards": []}      # 카드가 없어도 답변은 나가게
+
+    cards = []
+    for r in rows:
+        by_type = {c["type"]: CARD_PREFIX.sub("", c["content"] or "").strip()[:CARD_MAX]
+                   for c in r["chunks"]}
+        cards.append({
+            "id": r["id"], "name": r["name"], "department": r["department"],
+            "target": by_type.get("지원대상"), "benefit": by_type.get("서비스내용"),
+            "apply": by_type.get("신청방법"),
+            "summary": by_type.get("요약") or r["digest"],
+            "is_local": "요약" in by_type,
+        })
+    print(f"카드 {len(cards)}개 생성")
+    return {"cards": cards}

@@ -12,7 +12,8 @@ from nodes import (
     execute_detail_search_node,
     generate_answer_node,
     block_attack_node,
-    resolve_target_node
+    resolve_target_node,
+    build_cards_node
     )
 
 # ---------------------------------------------------------
@@ -62,6 +63,7 @@ workflow.add_node("execute_search", execute_search_node)
 workflow.add_node("execute_detail_search", execute_detail_search_node)
 workflow.add_node("generate_answer", generate_answer_node)
 workflow.add_node("block_attack", block_attack_node)
+workflow.add_node("build_cards", build_cards_node)
 
 
 # 시작점 설정 (의도 분석)
@@ -82,11 +84,13 @@ workflow.add_edge("pre_summarize", "classify_intent")
 # 일반 엣지 (검색 ->답변 생성)
 workflow.add_edge("execute_search", "generate_answer")
 workflow.add_edge("execute_detail_search", "generate_answer")
+#카드 만들기
+workflow.add_edge("generate_answer", "build_cards")
 
 # 종료점 (답변이 출력되는 노드들은 끝나면 시스템 대기 상태로)
 workflow.add_edge("general_chat", END)
 workflow.add_edge("ask_for_details", END)
-workflow.add_edge("generate_answer", END)
+workflow.add_edge("build_cards", END)
 workflow.add_edge("block_attack", END)
 
 # 최종 앱으로 컴파일

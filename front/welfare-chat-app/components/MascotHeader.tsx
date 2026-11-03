@@ -6,10 +6,10 @@ import { useFontSize } from '../contexts/font-size-context';
 
 
 const IMG = {
-  char: require('../../assets/mascot/char.png'),
-  success: require('../../assets/mascot/success.png'),
-  fail: require('../../assets/mascot/fail.png'),
-  blocked: require('../../assets/mascot/no.png'),
+  char: require('../assets/mascot/char.png'),
+  success: require('../assets/mascot/success.png'),
+  fail: require('../assets/mascot/fail.png'),
+  blocked: require('../assets/mascot/no.png'),
 }
 
 const MOOD: Record<ReplyType, {img:keyof typeof IMG; text: string}> = {

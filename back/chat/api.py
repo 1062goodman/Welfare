@@ -6,7 +6,7 @@ from fastapi import APIRouter, UploadFile, File
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 import openai
-
+from typing import List, Optional
 
 from graph import app 
 from tasks import session_timestamps
@@ -21,10 +21,22 @@ class ChatRequest(BaseModel):
     session_id: str          # 사용자 구분용 ID (단톡방 번호 같은 역할)
     user_message: str        # 사용자가 입력한 질문
 
+class PolicyCard(BaseModel):
+    id: str
+    name: str
+    department: Optional[str] = None
+    target: Optional[str] = None
+    benefit: Optional[str] = None
+    apply: Optional[str] = None
+    summary: Optional[str] = None
+    is_local: bool = False
+
+
 # 손님에게 줄 영수증(Response) 양식 정의
 class ChatResponse(BaseModel):
     bot_reply: str           # 챗봇의 답변
     reply_type: str = "general"
+    policies: List[PolicyCard] = []
 
 
 # 엔드포인트(창구) 만들기
@@ -46,13 +58,14 @@ def chat_with_bot(request: ChatRequest):
     # 챗봇이 만들어낸 마지막 답변 꺼내기
     final_message = result_state["messages"][-1].content
     reply_type= result_state.get("reply_type", "general")
+
+    policies = result_state.get("cards", []) if reply_type == "list" else []
     # 포장해서(Response 형식) 손님에게 반환
-    return ChatResponse(bot_reply=final_message, reply_type=reply_type)
+    return ChatResponse(bot_reply=final_message, reply_type=reply_type, policies=policies)
 
 
 
 # 채팅내역 가져오기------------------------------------------------ 토큰 검증 로직 추가해야함
-from typing import List
 import uuid
 
 class MessageHistoryResponse(BaseModel):
