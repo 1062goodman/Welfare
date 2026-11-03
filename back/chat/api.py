@@ -24,6 +24,7 @@ class ChatRequest(BaseModel):
 # 손님에게 줄 영수증(Response) 양식 정의
 class ChatResponse(BaseModel):
     bot_reply: str           # 챗봇의 답변
+    reply_type: str = "general"
 
 
 # 엔드포인트(창구) 만들기
@@ -44,9 +45,9 @@ def chat_with_bot(request: ChatRequest):
     
     # 챗봇이 만들어낸 마지막 답변 꺼내기
     final_message = result_state["messages"][-1].content
-    
+    reply_type= result_state.get("reply_type", "general")
     # 포장해서(Response 형식) 손님에게 반환
-    return ChatResponse(bot_reply=final_message)
+    return ChatResponse(bot_reply=final_message, reply_type=reply_type)
 
 
 

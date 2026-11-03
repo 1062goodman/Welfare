@@ -85,4 +85,6 @@ class AgentState(TypedDict):
 
     recommendation_history: Annotated[List[List[str]], operator.add]
 
+    reply_type: str # ask, blocked, general, no_result
+
 

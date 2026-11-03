@@ -32,11 +32,23 @@ interface ChatRequest {
   session_id: string;
   user_message: string;
 }
+
+export type ReplyType =
+  | 'general' | 'ask' | 'list' | 'detail'
+  | 'no_result' | 'detail_fail' | 'blocked' | 'error';
+
 interface ChatResponse {
   bot_reply: string;
+  reply_type: ReplyType;
 }
 
-export const sendChatMessage = async (sessionId: string, userMessage: string): Promise<string> => {
+
+export interface ChatResult {
+  reply: string;
+  replyType: ReplyType;
+}
+
+export const sendChatMessage = async (sessionId: string, userMessage: string): Promise<ChatResult> => {
     try{
         const requestData: ChatRequest = {
             session_id: sessionId,
@@ -45,11 +57,11 @@ export const sendChatMessage = async (sessionId: string, userMessage: string): P
 
         const response = await axios.post<ChatResponse>("https://welfare-1gs5.onrender.com/chat", requestData);
 
-        return response.data.bot_reply;
+        return { reply: response.data.bot_reply, replyType: response.data.reply_type ?? 'general' };
 
     } catch (error) {
         console.error("채팅 API에러", error);
-        return "서버 연결 실패."
+        return { reply: "서버 연결 실패.", replyType: 'error' };
     }
 }
 

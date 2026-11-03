@@ -369,9 +369,9 @@ def generate_answer_node(state: AgentState):
 
     if search_results.startswith("조건에 맞는 복지 정책을 찾지 못했습니다"):
         msg = "조건에 맞는 정책을 찾지 못했습니다. 상황을 조금 다르게 말씀해 주시면 다시 찾아볼게요."
-        return {"messages": [AIMessage(content=msg)], "recommendation_history": [[]]}
+        return {"messages": [AIMessage(content=msg)], "recommendation_history": [[]], "reply_type":"no_result"}
     if search_results.startswith(("이전에 추천해", "해당 정책의 상세 정보")):
-        return {"messages": [AIMessage(content=search_results)]}
+        return {"messages": [AIMessage(content=search_results)],"reply_type": "detail_fail"}
     
     if intent == "상세요구":
         guide = "사용자가 선택한 정책의 [상세 정보]를 제공 중입니다. 정보를 누락하지 말고 상세하고 친절하게 정리해 주세요."
@@ -419,10 +419,12 @@ def generate_answer_node(state: AgentState):
             return {"messages": [response],
                     "current_recommended_ids": [i for _, i, _ in shown],
                     "current_recommended_names": names,
-                    "recommendation_history": [names]}
+                    "recommendation_history": [names],
+                    "reply_type": "list"}
         return {"messages": [response],
-                "recommendation_history": [state.get("current_recommended_names", [])]}
-    return {"messages": [response]}
+                "recommendation_history": [state.get("current_recommended_names", [])],
+                "reply_type": "list"}
+    return {"messages": [response], "reply_type": "detail"}
     
 
 
@@ -439,7 +441,7 @@ def general_chat_node(state: AgentState):
     ])
     
     response = (prompt | chat_llm).invoke({"messages": state["messages"]})
-    return {"messages": [response]}
+    return {"messages": [response], "reply_type":"general"}
 
 
 # --------------------------------------------------------- 
@@ -449,7 +451,7 @@ def block_attack_node(state: AgentState):
     print("프롬프트 공격 방어")
 
     response = "서비스 검색과 무관한 지시, 시스템 설정을 변경하려는 요청은 응답할수없습니다."
-    return {"messages": [AIMessage(content=response)]}
+    return {"messages": [AIMessage(content=response)],"reply_type":"blocked"}
 
 
 
@@ -461,4 +463,4 @@ def ask_for_details_node(state: AgentState):
         ("system", ASK_DETAILS_PROMPT),
         MessagesPlaceholder(variable_name="messages")
     ]) | chat_llm).invoke({"messages": state["messages"]})
-    return {"messages": [response], "ask_count": state.get("ask_count", 0) + 1}
+    return {"messages": [response], "ask_count": state.get("ask_count", 0) + 1, "reply_type":"ask"}

@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform, PermissionsAndroid } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform, PermissionsAndroid, Image } from 'react-native';
 import LiveAudioStream from 'react-native-live-audio-stream';
 import { Buffer } from 'buffer';
 
-import { get_chat_history, sendChatMessage } from '../../../api/chatApi';
+import { get_chat_history, sendChatMessage, ReplyType } from '../../../api/chatApi';
 import { getSessionId } from '../../../utils/sessionManager';
 import { useFontSize } from '../../../contexts/font-size-context';
+import MascotHeader from '@/components/MascotHeader';
+
 
 export default function ChatScreen() {
   const [messages, setMessages] = useState([{ id: '1', text: '안녕하세요! 복지 정책 챗봇입니다.', isUser: false }]);
@@ -14,8 +16,11 @@ export default function ChatScreen() {
   const [status, setStatus] = useState('연결 대기 중...');
   const [wsStatus, setWsStatus] = useState<'connecting..' | 'open' | 'closed'>('connecting..');
   const [isRecording, setIsRecording] = useState(false); //  토글용 state 추가
+  const [mood, setMood] = useState<ReplyType>('general');
 
-   const {fontSize} = useFontSize(); //글자크기등 세팅 가져오기
+
+
+  const {fontSize} = useFontSize(); //글자크기등 세팅 가져오기
   const ws = useRef<WebSocket | null>(null);
   const SERVER_URL = 'wss://welfare-1gs5.onrender.com/ws/chat/test_session_1';
 
@@ -121,9 +126,10 @@ export default function ChatScreen() {
     setInputText('');
 
     try {
-      const botReply = await sendChatMessage(sessionid, textToSend);
-      const botMessage = { id: Date.now().toString(), text: botReply, isUser: false };
+      const {reply, replyType} = await sendChatMessage(sessionid, textToSend);
+      const botMessage = { id: Date.now().toString(), text: reply, isUser: false };
       setMessages((prev) => [...prev, botMessage]);
+      setMood(replyType);
     } catch (error) {
       console.error('챗봇 응답 실패:', error);
     }
