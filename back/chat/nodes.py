@@ -376,8 +376,9 @@ def generate_answer_node(state: AgentState):
     if intent == "상세요구":
         guide = "사용자가 선택한 정책의 [상세 정보]를 제공 중입니다. 정보를 누락하지 말고 상세하고 친절하게 정리해 주세요."
     else:
-        guide = ("여러 정책의 [목록과 요약]을 제공 중입니다. 사용자가 신청 방법, 지원 대상, 지원 내용 등 특정 정보를 물었다면 "
-                 "그 정보를 먼저 답하세요. 요약하여 소개한 뒤 '더 자세히 알고 싶은 정책이 있다면 번호나 이름을 말씀해 주세요'라고 유도하세요.")
+        guide = ("여러 정책의 [목록]을 안내 중입니다. 정책별 내용은 화면에 카드로 따로 표시되므로 "
+                 "정책명을 나열하거나 내용을 반복하지 말고 '조건에 맞는 정책을 찾았어요. 카드를 넘겨 확인해 보세요.' 정도로 한 문장만 쓰세요. "
+                 "마지막에 '더 자세히 알고 싶은 정책은 번호나 이름으로 말씀해 주세요'라고 덧붙이세요.")
 
     if intent == "상세요구" and state.get("detail_titles"):
         titles = ", ".join(state["detail_titles"])
@@ -407,22 +408,9 @@ def generate_answer_node(state: AgentState):
 
 
     if intent != "상세요구":   # 목록을 보여준 턴: 화면에 나온 순서로 갱신
-        norm = lambda s: re.sub(r"\s+", "", s)
-        text, seen, shown = norm(response.content), set(), []
-        for pid, name in zip(state.get("current_recommended_ids", []), state.get("current_recommended_names", [])):
-            pos = text.find(norm(name))
-            if pos >= 0 and name not in seen:
-                seen.add(name); shown.append((pos, pid, name))
-        if shown:
-            shown.sort()
-            names = [n for _, _, n in shown]
-            return {"messages": [response],
-                    "current_recommended_ids": [i for _, i, _ in shown],
-                    "current_recommended_names": names,
-                    "recommendation_history": [names],
-                    "reply_type": "list"}
+        names = state.get("current_recommended_names", [])
         return {"messages": [response],
-                "recommendation_history": [state.get("current_recommended_names", [])],
+                "recommendation_history": [names],
                 "reply_type": "list"}
     return {"messages": [response], "reply_type": "detail"}
     
