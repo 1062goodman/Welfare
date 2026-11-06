@@ -491,5 +491,8 @@ def build_cards_node(state: AgentState):
             "summary": by_type.get("요약") or r["digest"],
             "is_local": "요약" in by_type,
         })
+    last = state["messages"][-1]
+    tagged = last.model_copy(update={"additional_kwargs": {
+        **last.additional_kwargs, "cards": cards, "reply_type": "list"}})
     print(f"카드 {len(cards)}개 생성")
-    return {"cards": cards}
+    return {"cards": cards, "messages": [tagged]}

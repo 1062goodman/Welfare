@@ -4,9 +4,9 @@ import axios from 'axios';
 // -------------------------------채팅 내역 가져오기
 
 export interface HistoryResponse{
-    id:string ,
-    text:string ,
-    isUser: boolean
+    id:string, text:string, isUser: boolean,
+    replyType?: ReplyType,
+    policies?: PolicyCardData[]
 }
 
 export const get_chat_history= async (sessionid: string): Promise<HistoryResponse[]> =>{
@@ -33,6 +33,18 @@ interface ChatRequest {
   user_message: string;
 }
 
+export interface PolicyCardData {
+  id: string;
+  name: string;
+  department?: string | null;
+  target?: string | null;
+  benefit?: string | null;
+  apply?: string | null;
+  summary?: string | null;
+  is_local: boolean;
+}
+
+
 export type ReplyType =
   | 'general' | 'ask' | 'list' | 'detail'
   | 'no_result' | 'detail_fail' | 'blocked' | 'error';
@@ -40,12 +52,14 @@ export type ReplyType =
 interface ChatResponse {
   bot_reply: string;
   reply_type: ReplyType;
+  policies?: PolicyCardData[];
 }
 
 
 export interface ChatResult {
   reply: string;
   replyType: ReplyType;
+  policies: PolicyCardData[];
 }
 
 export const sendChatMessage = async (sessionId: string, userMessage: string): Promise<ChatResult> => {
@@ -57,11 +71,15 @@ export const sendChatMessage = async (sessionId: string, userMessage: string): P
 
         const response = await axios.post<ChatResponse>("https://welfare-1gs5.onrender.com/chat", requestData);
 
-        return { reply: response.data.bot_reply, replyType: response.data.reply_type ?? 'general' };
+        return {
+            reply: response.data.bot_reply,
+            replyType: response.data.reply_type ?? 'general',
+            policies: response.data.policies ?? [],
+};
 
     } catch (error) {
         console.error("채팅 API에러", error);
-        return { reply: "서버 연결 실패.", replyType: 'error' };
+        return { reply: "서버 연결 실패.", replyType: 'error', policies: [] };
     }
 }
 

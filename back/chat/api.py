@@ -69,9 +69,11 @@ def chat_with_bot(request: ChatRequest):
 import uuid
 
 class MessageHistoryResponse(BaseModel):
-    id: str
+    d: str
     text: str
     isUser: bool
+    replyType: Optional[str] = None
+    policies: List[PolicyCard] = []
 
 @router.get("/chat/history/{session_id}", response_model=List[MessageHistoryResponse])
 def get_chat_history(session_id: str):
@@ -87,10 +89,13 @@ def get_chat_history(session_id: str):
     history = []
     # 3. LangGraph의 메시지 객체들을 프론트엔드용 JSON 양식으로 변환
     for msg in state.values["messages"]:
+        extra = getattr(msg, "additional_kwargs", {}) or {}
         history.append(MessageHistoryResponse(
             id=msg.id if hasattr(msg, 'id') and msg.id else str(uuid.uuid4()),
             text=msg.content,
-            isUser=msg.type == "human" # human이면 True(내 메시지), ai면 False(챗봇)
+            isUser=msg.type == "human",
+            replyType=extra.get("reply_type"),
+            policies=extra.get("cards", []),
         ))
         
     return history

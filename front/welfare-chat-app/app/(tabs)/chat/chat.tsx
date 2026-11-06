@@ -1,23 +1,26 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform, PermissionsAndroid, Keyboard, KeyboardAvoidingView} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform, PermissionsAndroid, KeyboardAvoidingView} from 'react-native';
 import LiveAudioStream from 'react-native-live-audio-stream';
 import { Buffer } from 'buffer';
 
-import { get_chat_history, sendChatMessage, ReplyType } from '../../../api/chatApi';
+import { get_chat_history, sendChatMessage, ReplyType, PolicyCardData } from '../../../api/chatApi';
 import { getSessionId } from '../../../utils/sessionManager';
 import { useFontSize } from '../../../contexts/font-size-context';
-import MascotHeader from '../../../components/MascotHeader';
+import Mascot from '../../../components/mascot';
+import PolicyCarousel from '../../../components/PolicyCarousel';
+
+type Msg = { id: string; text: string; isUser: boolean; replyType?: ReplyType; policies?: PolicyCardData[] };
+
 
 
 export default function ChatScreen() {
-  const [messages, setMessages] = useState([{ id: '1', text: '안녕하세요! 복지 정책 챗봇입니다.', isUser: false }]);
+  const [messages, setMessages] = useState<Msg[]>([{ id: '1', text: '안녕하세요! 복지 정책 챗봇입니다.', isUser: false, replyType: 'general' }]);
   const [inputText, setInputText] = useState('');
   const [sessionid, setSessionId] = useState<string>('');
   const [status, setStatus] = useState('연결 대기 중...');
   const [wsStatus, setWsStatus] = useState<'connecting..' | 'open' | 'closed'>('connecting..');
   const [isRecording, setIsRecording] = useState(false); //  토글용 state 추가
-  const [mood, setMood] = useState<ReplyType>('general');
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
 
 
 
@@ -73,9 +76,6 @@ export default function ChatScreen() {
 
     setupMic();
     connectWebSocket();
-
-    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
     
 
     //채팅 불러오기
@@ -103,7 +103,6 @@ export default function ChatScreen() {
     return () => {
       if (ws.current) ws.current.close();
       LiveAudioStream.stop();
-      show.remove(); hide.remove();
     };
   }, []);
 
@@ -133,20 +132,39 @@ export default function ChatScreen() {
     setInputText('');
 
     try {
-      const {reply, replyType} = await sendChatMessage(sessionid, textToSend);
-      const botMessage = { id: Date.now().toString(), text: reply, isUser: false };
+      const {reply, replyType, policies} = await sendChatMessage(sessionid, textToSend);
+      const botMessage: Msg = { id: Date.now().toString(), text: reply, isUser: false, replyType, policies };
       setMessages((prev) => [...prev, botMessage]);
-      setMood(replyType);
     } catch (error) {
       console.error('챗봇 응답 실패:', error);
     }
   };
 
-  const renderBubble = ({ item }: { item: any }) => (
-    <View style={[styles.bubble, item.isUser ? styles.myBubble : styles.botBubble]}>
-        <Text style={[item.isUser ? styles.myText : styles.botText, {fontSize: fontSize.message}]}>{item.text}</Text>
-    </View>
-  );
+  const lastBotId = [...messages].reverse().find((m) => !m.isUser)?.id;
+
+  const renderBubble = ({ item }: { item: Msg }) => {
+    if (item.isUser) {
+      return (
+        <View style={[styles.bubble, styles.myBubble]}>
+          <Text style={[styles.myText, { fontSize: fontSize.message }]}>{item.text}</Text>
+        </View>
+      );
+   }
+    const showMascot = item.id === lastBotId && !!item.replyType;
+    return (
+      <View>
+        {showMascot && (
+          <View style={{ marginLeft: 4, marginTop: 8 }}>
+            <Mascot type={item.replyType!} size={96} />
+          </View>
+        )}
+        <View style={[styles.bubble, styles.botBubble]}>
+          <Text style={[styles.botText, { fontSize: fontSize.message }]}>{item.text}</Text>
+        </View>
+        {!!item.policies?.length && <PolicyCarousel policies={item.policies} />}
+      </View>
+    );
+  };
   
 
 
@@ -164,8 +182,7 @@ export default function ChatScreen() {
           <Text style={styles.headerIcon}>🏠</Text>
         </TouchableOpacity>
       </View>
-      
-      {!keyboardOpen && <MascotHeader mood={mood} />}
+    
       <FlatList
         data={messages}
         renderItem={renderBubble}
@@ -321,6 +338,7 @@ suggestionText: {
   color: '#5C4632',
   fontSize: 13,
 },
+botRow: { flexDirection: 'row', alignItems: 'flex-end' },
 
 
 });
