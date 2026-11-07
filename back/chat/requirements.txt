@@ -9,3 +9,5 @@ langchain-neo4j==0.10.0
 python-dotenv==1.2.2
 requests==2.33.1
 python-multipart
+grpcio==1.85.1
+protobuf==7.36.2

@@ -154,11 +154,12 @@ export default function ChatScreen() {
     return (
       <View>
         {showMascot && (
-          <View style={{ marginLeft: 4, marginTop: 8 }}>
-            <Mascot type={item.replyType!} size={96} />
+          <View style={{ marginLeft: 0, marginTop: 8, marginBottom: -10 }}>
+            <Mascot type={item.replyType!} size={150} />
           </View>
         )}
         <View style={[styles.bubble, styles.botBubble]}>
+          {showMascot && <View style={styles.tail} />}
           <Text style={[styles.botText, { fontSize: fontSize.message }]}>{item.text}</Text>
         </View>
         {!!item.policies?.length && <PolicyCarousel policies={item.policies} />}
@@ -339,6 +340,19 @@ suggestionText: {
   fontSize: 13,
 },
 botRow: { flexDirection: 'row', alignItems: 'flex-end' },
+tail: {
+  position: 'absolute',
+  top: -9,
+  left: 34,
+  width: 0,
+  height: 0,
+  borderLeftWidth: 8,
+  borderRightWidth: 8,
+  borderBottomWidth: 10,
+  borderLeftColor: 'transparent',
+  borderRightColor: 'transparent',
+  borderBottomColor: BUBBLE_BOT,
+},
 
 
 });

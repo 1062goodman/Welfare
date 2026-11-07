@@ -69,7 +69,7 @@ def chat_with_bot(request: ChatRequest):
 import uuid
 
 class MessageHistoryResponse(BaseModel):
-    d: str
+    id: str
     text: str
     isUser: bool
     replyType: Optional[str] = None
@@ -108,68 +108,114 @@ def health_check():
 
 
 # 음성인식
-import io
+import asyncio, json
+import grpc
 from fastapi import WebSocket, WebSocketDisconnect
-import wave 
+import nest_pb2, nest_pb2_grpc
 
-def add_wav_header(pcm_byte: bytes, sample_rate = 16000, channels=1, bits =16) -> bytes:
-    buf = io.BytesIO()
-    with wave.open(buf, 'wb') as wf:
-        wf.setnchannels(channels)
-        wf.setsampwidth(bits // 8)
-        wf.setframerate(sample_rate)
-        wf.writeframes(pcm_byte)
+CLOVA_HOST = "clovaspeech-gw.ncloud.com:50051"
+SILENCE = b"\x00" * 16000      # 0.5초 무음 (16kHz, 16bit, 모노)
 
-    return buf.getvalue()
+client = openai.AsyncOpenAI()  # /File 엔드포인트용
 
+def _data_req(chunk: bytes, seq: int, ep: bool):
+    return nest_pb2.NestRequest(
+        type=nest_pb2.RequestType.DATA,
+        data=nest_pb2.NestData(
+            chunk=chunk,
+            extra_contents=json.dumps({"seqId": seq, "epFlag": ep}),
+        ),
+    )
 
-client = openai.AsyncOpenAI()
+async def _clova_requests(queue: asyncio.Queue):
+    yield nest_pb2.NestRequest(
+        type=nest_pb2.RequestType.CONFIG,
+        config=nest_pb2.NestConfig(config=json.dumps({"transcription": {"language": "ko"}})),
+    )
+    seq, prev = 0, None
+    while True:
+        item = await queue.get()
+        if item is None:                      # STOP_RECORDING
+            break
+        if prev is not None:
+            yield _data_req(prev, seq, False)
+            seq += 1
+        prev = item
+    if prev is not None:
+        yield _data_req(prev, seq, False)
+        yield _data_req(SILENCE, seq + 1, True)   # 마지막: 무음 + 발화 종료 신호
+
+async def _clova_pump(call, websocket: WebSocket, state: dict):
+    try:
+        async for resp in call:
+            try:
+                t = json.loads(resp.contents).get("transcription")
+            except ValueError:
+                continue
+            piece = (t or {}).get("text", "")
+            if piece:
+                state["text"] += piece
+                await websocket.send_json({"recognized_text": state["text"].lstrip()})
+    except grpc.aio.AioRpcError as e:
+        print(f"클로바 오류: {e.code()} {e.details()}")
+        await websocket.send_json({"status": "error", "message": e.details()})
 
 @router.websocket("/ws/chat/{session_id}")
 async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
     print(f"{session_id} 웹소켓 연결")
 
-    audio_buffer = io.BytesIO() # 오디오 데이터 버퍼
+    queue = task = channel = None
+    state = {"text": ""}
+
+    async def start():
+        nonlocal queue, task, channel, state
+        state = {"text": ""}
+        queue = asyncio.Queue()
+        channel = grpc.aio.secure_channel(CLOVA_HOST, grpc.ssl_channel_credentials())
+        stub = nest_pb2_grpc.NestServiceStub(channel)
+        call = stub.recognize(
+            _clova_requests(queue),
+            metadata=(("authorization", f"Bearer {os.environ['CLOVA_SECRET']}"),),
+        )
+        task = asyncio.create_task(_clova_pump(call, websocket, state))
+
+    async def finish():
+        nonlocal queue, task, channel
+        if queue is None:
+            return
+        await queue.put(None)
+        try:
+            await asyncio.wait_for(task, timeout=4)
+        except asyncio.TimeoutError:
+            print(f"[{session_id}] 클로바 응답 대기 시간 초과")
+        await channel.close()
+        text = state["text"].strip()
+        print(f"{session_id} 음성 인식 결과: {text}")
+        await websocket.send_json({"recognized_text": text, "final": True})
+        queue = task = channel = None
 
     try:
         while True:
-
             message = await websocket.receive()
-
-            if "bytes" in message:
-                audio_buffer.write(message["bytes"])
-
-            elif "text" in message:  # 제어 신호 처리
-                command = message["text"]
-
-                if command == "STOP_RECORDING": #녹음 완료되면 
-                    audio_bytes = audio_buffer.getvalue()
-
-                    if len(audio_bytes) > 0:
-                        wav_bytes = add_wav_header(audio_bytes)
-                        audio_file = ("audio.wav", io.BytesIO(wav_bytes), "audio/wav") #파일 만들기
-
-                        transcript = await client.audio.transcriptions.create(
-                            model = "whisper-1",
-                            file = audio_file
-                        )
-
-                        user_message = transcript.text
-                        print(f"{session_id} 음성 인식 결과: {user_message}")
-
-                        audio_buffer = io.BytesIO()
-
-                        await websocket.send_json({"recognized_text": user_message})
-
+            if message.get("type") == "websocket.disconnect":
+                break
+            if message.get("bytes"):
+                if queue is None:
+                    await start()
+                await queue.put(message["bytes"])
+            elif message.get("text") == "STOP_RECORDING":
+                await finish()
     except WebSocketDisconnect:
-        print(f"[{session_id}] WebSocket 연결 종료됨")
+        pass
     except Exception as e:
         print(f"[{session_id}] WebSocket 오류 발생: {e}")
-        await websocket.send_json({
-            "status": "error", 
-            "message": str(e)
-        })
+    finally:
+        print(f"[{session_id}] WebSocket 연결 종료됨")
+        if task and not task.done():
+            task.cancel()
+        if channel:
+            await channel.close()
 
     
 
