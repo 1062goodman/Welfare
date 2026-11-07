@@ -111,7 +111,7 @@ def health_check():
 import asyncio, json
 import grpc
 from fastapi import WebSocket, WebSocketDisconnect
-import nest_pb2, nest_pb2_grpc
+from .. import nest_pb2, nest_pb2_grpc
 
 CLOVA_HOST = "clovaspeech-gw.ncloud.com:50051"
 SILENCE = b"\x00" * 16000      # 0.5초 무음 (16kHz, 16bit, 모노)
