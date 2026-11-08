@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import back.chat.nest_pb2 as nest__pb2
+import nest_pb2 as nest__pb2
 
 GRPC_GENERATED_VERSION = '1.85.1'
 GRPC_VERSION = grpc.__version__
