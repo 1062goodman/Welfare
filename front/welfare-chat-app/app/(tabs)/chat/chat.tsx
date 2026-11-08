@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform, PermissionsAndroid, KeyboardAvoidingView} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Platform, PermissionsAndroid, KeyboardAvoidingView, Animated, Vibration} from 'react-native';
 import LiveAudioStream from 'react-native-live-audio-stream';
 import { Buffer } from 'buffer';
 
@@ -8,18 +8,34 @@ import { getSessionId } from '../../../utils/sessionManager';
 import { useFontSize } from '../../../contexts/font-size-context';
 import Mascot from '../../../components/mascot';
 import PolicyCarousel from '../../../components/PolicyCarousel';
+import VoicePanel from '../../../components/VoicePanel';
 
 type Msg = { id: string; text: string; isUser: boolean; replyType?: ReplyType; policies?: PolicyCardData[] };
 
-
+const calcLevel = (buf: Buffer) => {
+  const n = Math.floor(buf.length / 2);
+  if (!n) return 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const v = buf.readInt16LE(i * 2);
+    sum += v * v;
+  }
+  return Math.min(1, Math.sqrt(sum / n) / 6000);   // 6000: 감도(작으면 더 민감)
+};
 
 export default function ChatScreen() {
+  
   const [messages, setMessages] = useState<Msg[]>([{ id: '1', text: '안녕하세요! 복지 정책 챗봇입니다.', isUser: false, replyType: 'general' }]);
   const [inputText, setInputText] = useState('');
   const [sessionid, setSessionId] = useState<string>('');
   const [status, setStatus] = useState('연결 대기 중...');
   const [wsStatus, setWsStatus] = useState<'connecting..' | 'open' | 'closed'>('connecting..');
-  const [isRecording, setIsRecording] = useState(false); //  토글용 state 추가
+  const [voiceState, setVoiceState] = useState<'idle' | 'listening' | 'finishing'>('idle');
+  const [noSound, setNoSound] = useState(false);
+  const level = useRef(new Animated.Value(0)).current;
+  const heardRef = useRef(false);
+  const listRef = useRef<FlatList<Msg>>(null);
+  const finishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
 
@@ -28,6 +44,10 @@ export default function ChatScreen() {
   const {fontSize} = useFontSize(); //글자크기등 세팅 가져오기
   const ws = useRef<WebSocket | null>(null);
   const SERVER_URL = 'wss://welfare-1gs5.onrender.com/ws/chat/test_session_1';
+
+  
+
+
 
   const connectWebSocket = () => {
     setWsStatus('connecting..');
@@ -42,6 +62,8 @@ export default function ChatScreen() {
     ws.current.onclose = () => {
       setStatus('소켓 연결 끊어짐');
       setWsStatus('closed');
+      LiveAudioStream.stop();
+      setVoiceState('idle');
     };
     ws.current.onerror = (e) => {
       setStatus(`소켓 에러: ${(e as any).message}`);
@@ -49,7 +71,16 @@ export default function ChatScreen() {
     };
     ws.current.onmessage = (e) => {
       const data = JSON.parse(e.data);
-      if (data.recognized_text) setInputText(data.recognized_text);
+       if (data.status === 'error') {
+        setVoiceState('idle');
+        setStatus('음성 인식에 실패했어요. 다시 눌러 주세요');
+        return;
+      }
+      if (typeof data.recognized_text === 'string') setInputText(data.recognized_text);
+      if (data.final) {
+        if (finishTimer.current) clearTimeout(finishTimer.current);
+        setVoiceState('idle');
+      }
     };
   };
 
@@ -91,8 +122,16 @@ export default function ChatScreen() {
     };
 
     LiveAudioStream.on('data', (base64Chunk) => {
+      const binaryData = Buffer.from(base64Chunk, 'base64');
+
+      const v = calcLevel(binaryData);
+      Animated.timing(level, { toValue: v, duration: 100, useNativeDriver: true }).start();
+      if (v > 0.08 && !heardRef.current) {
+        heardRef.current = true;
+        setNoSound(false);
+      }
+
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        const binaryData = Buffer.from(base64Chunk, 'base64');
         const arraybuffer = binaryData.buffer.slice(binaryData.byteOffset, binaryData.byteOffset + binaryData.byteLength);
         ws.current.send(arraybuffer);
       }
@@ -101,6 +140,7 @@ export default function ChatScreen() {
     loadChatroom();
 
     return () => {
+      if (finishTimer.current) clearTimeout(finishTimer.current);
       if (ws.current) ws.current.close();
       LiveAudioStream.stop();
     };
@@ -108,20 +148,42 @@ export default function ChatScreen() {
 
   // ✅ 시작/종료를 하나로 합친 토글 함수
   const toggleRecording = () => {
-    if (isRecording) {
+    if (voiceState === 'listening') {
       LiveAudioStream.stop();
+      Animated.timing(level, { toValue: 0, duration: 150, useNativeDriver: true }).start();
+      Vibration.vibrate(30);
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
         ws.current.send('STOP_RECORDING');
-        setStatus('서버 변환 대기 중...');
+        setVoiceState('finishing');
+        finishTimer.current = setTimeout(() => setVoiceState('idle'), 7000); // final이 안 와도 복귀
       } else {
+        setVoiceState('idle');
         setStatus('소켓이 연결되어 있지 않습니다.');
       }
-    } else {
-      setStatus('녹음 중... ');
+    } else if (voiceState === 'idle') {
+      if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+        setStatus('서버 연결이 필요해요. "다시 연결"을 눌러 주세요');
+        return;
+      }
+      setInputText('');
+      heardRef.current = false;
+      setNoSound(false);
+      setVoiceState('listening');
+      Vibration.vibrate(30);
       LiveAudioStream.start();
     }
-    setIsRecording(!isRecording);
   };
+
+  useEffect(() => {          // 4초간 소리가 없으면 안내
+    if (voiceState !== 'listening') return;
+    const t = setTimeout(() => { if (!heardRef.current) setNoSound(true); }, 4000);
+    return () => clearTimeout(t);
+  }, [voiceState]);
+
+  useEffect(() => {          // 패널이 열리고 닫힐 때 최신 답변이 보이게
+    const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 250);
+    return () => clearTimeout(t);
+  }, [voiceState]);
 
   const handleSend = async () => {
     if (inputText.trim() === '') return;
@@ -185,13 +247,14 @@ export default function ChatScreen() {
       </View>
     
       <FlatList
+        ref={listRef}
         data={messages}
         renderItem={renderBubble}
         keyExtractor={(item) => item.id}
         style={styles.chatList}
       />
-
-
+      {voiceState === 'idle' ? (
+      <>  
       {wsStatus === 'closed' && (
         <TouchableOpacity style={styles.reconnectButton} onPress={connectWebSocket}>
           <Text style={styles.reconnectText}>🔄 다시 연결</Text>
@@ -201,12 +264,9 @@ export default function ChatScreen() {
 
       {/* ✅ 원형 토글 마이크 버튼 (가운데) */}
       <View style={styles.micArea}>
-        <TouchableOpacity
-          style={[styles.micCircle, isRecording && styles.micCircleActive]}
-          onPress={toggleRecording}
-        >
-          <Text style={styles.micIcon}>{isRecording ? '■' : '🎤'}</Text>
-        </TouchableOpacity>
+        <TouchableOpacity style={styles.micCircle} onPress={toggleRecording}>
+              <Text style={styles.micIcon}>🎤</Text>
+            </TouchableOpacity>
       </View>
 
       {/* ✅ 하단 입력줄: + 아이콘 포함 알약 입력창 + 오렌지 전송 버튼 */}
@@ -225,8 +285,13 @@ export default function ChatScreen() {
           <Text style={styles.sendIcon}>➤</Text>
         </TouchableOpacity>
       </View>
+    </>
+    ) : (
+        <VoicePanel state={voiceState} text={inputText} level={level} noSound={noSound} onStop={toggleRecording} />
+      )}
     </KeyboardAvoidingView>
   );
+  
 }
 
 const CREAM_BG = '#FBF3E7';
