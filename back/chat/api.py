@@ -32,6 +32,7 @@ class PolicyCard(BaseModel):
     apply: Optional[str] = None
     summary: Optional[str] = None
     is_local: bool = False
+    url: Optional[str] = None
 
 
 # 손님에게 줄 영수증(Response) 양식 정의

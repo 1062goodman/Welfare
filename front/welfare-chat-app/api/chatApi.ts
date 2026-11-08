@@ -42,6 +42,7 @@ export interface PolicyCardData {
   apply?: string | null;
   summary?: string | null;
   is_local: boolean;
+  url?: string | null;
 }
 
 

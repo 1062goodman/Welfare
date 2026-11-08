@@ -456,7 +456,9 @@ def ask_for_details_node(state: AgentState):
 
 # --------------------------------카드 만들기
 CARD_PREFIX = re.compile(r"^\[정책명:[^\]]*\]\s*(?:지원대상|서비스내용|신청방법|요약)?\s*:?\s*")
-CARD_MAX = 600
+BOKJIRO_URL = "https://www.bokjiro.go.kr/ssis-tbu/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId="
+
+CARD_MAX = 3000
 
 def build_cards_node(state: AgentState):
     # 목록 안내가 아니면 카드 없음
@@ -489,6 +491,7 @@ def build_cards_node(state: AgentState):
             "target": by_type.get("지원대상"), "benefit": by_type.get("서비스내용"),
             "apply": by_type.get("신청방법"),
             "summary": by_type.get("요약") or r["digest"],
+            "url": f"{BOKJIRO_URL}{r['id']}",
             "is_local": "요약" in by_type,
         })
     last = state["messages"][-1]
